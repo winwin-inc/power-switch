@@ -2,7 +2,7 @@
 
 ## 分支与版本策略
 
-本项目参考 [CC Switch CI](https://github.com/farion1231/cc-switch/blob/main/.github/workflows/ci.yml) 与 [标签发布流程](https://github.com/farion1231/cc-switch/blob/main/.github/workflows/release.yml)，采用以下策略：
+本项目使用 GitHub Actions 执行持续集成与桌面应用发布，采用以下策略：
 
 - `master` 是默认开发和发布基线；功能在短期分支开发，经 PR 检查后合并，不维护长期 `release` 分支。
 - 推送 `master`、面向 `master` 的 PR、手动运行 CI 均执行质量检查，不创建 Release。
