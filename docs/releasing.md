@@ -33,15 +33,15 @@ CI 使用 Node.js 22、pnpm 10.18.3、Rust 1.92.0。前端依赖采用 `--frozen
 ```sh
 git switch master
 git pull --ff-only origin master
-git switch -c codex/release-v0.1.3
+git switch -c codex/release-v0.1.4
 pnpm install --frozen-lockfile
 ```
 
-以 `0.1.3` 为例，编辑 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 中的项目版本，三处必须完全一致；不要修改依赖版本来代替项目版本。更新 Cargo 锁文件中的本项目记录：
+以 `0.1.4` 为例，编辑 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 中的项目版本，三处必须完全一致；不要修改依赖版本来代替项目版本。更新 Cargo 锁文件中的本项目记录：
 
 ```sh
 cargo check --manifest-path src-tauri/Cargo.toml --no-default-features
-pnpm release:check -- v0.1.3
+pnpm release:check -- v0.1.4
 just check
 git diff --check
 git diff -- src-tauri/Cargo.lock
@@ -55,9 +55,9 @@ git diff -- src-tauri/Cargo.lock
 git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git diff --cached --check
 git diff --cached
-git commit -m "chore: prepare v0.1.3"
-git push -u origin codex/release-v0.1.3
-gh pr create --base master --title "Prepare v0.1.3" --body "Synchronize the application version for the next prerelease."
+git commit -m "chore: prepare v0.1.4"
+git push -u origin codex/release-v0.1.4
+gh pr create --base master --title "Prepare v0.1.4" --body "Synchronize the application version for the next prerelease."
 ```
 
 任何层级的 `.env`、`.venv`、`venv`、密钥和本地模型数据都不能暂存或提交。
@@ -69,10 +69,10 @@ PR 合并且 `master` CI 成功后：
 ```sh
 git switch master
 git pull --ff-only origin master
-pnpm release:check -- v0.1.3
+pnpm release:check -- v0.1.4
 git status --short
-git tag -a v0.1.3 -m "power-switch v0.1.3"
-git push origin v0.1.3
+git tag -a v0.1.4 -m "power-switch v0.1.4"
+git push origin v0.1.4
 ```
 
 首次发布使用项目已有版本 `0.1.0`，将上面标签替换为 `v0.1.0`，无需先增加版本号。打标签前必须确认工作区没有未提交的发布改动。
@@ -82,7 +82,7 @@ git push origin v0.1.3
 ```sh
 gh run list --repo winwin-inc/power-switch --workflow release.yml
 gh run watch RUN_ID --repo winwin-inc/power-switch --exit-status
-gh release view v0.1.3 --repo winwin-inc/power-switch
+gh release view v0.1.4 --repo winwin-inc/power-switch
 ```
 
 Release 流程依次执行标签和版本检查、可复用 CI、五个平台构建、资产完整性检查、草稿上传与校验，最后才公开为预发布。CI 测试数据使用隔离目录，不运行会修改真实 WorkBuddy 等配置的手动验收工具。
