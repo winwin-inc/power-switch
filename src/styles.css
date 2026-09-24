@@ -564,6 +564,7 @@ h1 {
 .openai-responses.protocol-tag {
   color: var(--green);
   background: var(--green-soft);
+  opacity: 0.48;
 }
 .anthropic-messages.protocol-mark,
 .anthropic-messages.protocol-tag {

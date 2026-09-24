@@ -19,7 +19,7 @@
 ```sh
 gh auth login --hostname github.com --git-protocol ssh --web
 gh auth status
-gh repo edit zbmain/power-switch --default-branch master
+gh repo edit winwin-inc/power-switch --default-branch master
 ```
 
 更改默认分支前需确保 `master` 已推送。保持仓库现有可见性；私有仓库的下载链接仅对有权限的用户开放。GitHub 托管 runner 的可用额度遵循仓库所属账号计划。
@@ -33,15 +33,15 @@ CI 使用 Node.js 22、pnpm 10.18.3、Rust 1.92.0。前端依赖采用 `--frozen
 ```sh
 git switch master
 git pull --ff-only origin master
-git switch -c codex/release-v0.1.1
+git switch -c codex/release-v0.1.2
 pnpm install --frozen-lockfile
 ```
 
-以 `0.1.1` 为例，编辑 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 中的项目版本，三处必须完全一致；不要修改依赖版本来代替项目版本。更新 Cargo 锁文件中的本项目记录：
+以 `0.1.2` 为例，编辑 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 中的项目版本，三处必须完全一致；不要修改依赖版本来代替项目版本。更新 Cargo 锁文件中的本项目记录：
 
 ```sh
 cargo check --manifest-path src-tauri/Cargo.toml --no-default-features
-pnpm release:check -- v0.1.1
+pnpm release:check -- v0.1.2
 just check
 git diff --check
 git diff -- src-tauri/Cargo.lock
@@ -55,9 +55,9 @@ git diff -- src-tauri/Cargo.lock
 git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git diff --cached --check
 git diff --cached
-git commit -m "chore: prepare v0.1.1"
-git push -u origin codex/release-v0.1.1
-gh pr create --base master --title "Prepare v0.1.1" --body "Synchronize the application version for the next prerelease."
+git commit -m "chore: prepare v0.1.2"
+git push -u origin codex/release-v0.1.2
+gh pr create --base master --title "Prepare v0.1.2" --body "Synchronize the application version for the next prerelease."
 ```
 
 任何层级的 `.env`、`.venv`、`venv`、密钥和本地模型数据都不能暂存或提交。
@@ -69,10 +69,10 @@ PR 合并且 `master` CI 成功后：
 ```sh
 git switch master
 git pull --ff-only origin master
-pnpm release:check -- v0.1.1
+pnpm release:check -- v0.1.2
 git status --short
-git tag -a v0.1.1 -m "power-switch v0.1.1"
-git push origin v0.1.1
+git tag -a v0.1.2 -m "power-switch v0.1.2"
+git push origin v0.1.2
 ```
 
 首次发布使用项目已有版本 `0.1.0`，将上面标签替换为 `v0.1.0`，无需先增加版本号。打标签前必须确认工作区没有未提交的发布改动。
@@ -80,9 +80,9 @@ git push origin v0.1.1
 查看运行状态：
 
 ```sh
-gh run list --repo zbmain/power-switch --workflow release.yml
-gh run watch RUN_ID --repo zbmain/power-switch --exit-status
-gh release view v0.1.1 --repo zbmain/power-switch
+gh run list --repo winwin-inc/power-switch --workflow release.yml
+gh run watch RUN_ID --repo winwin-inc/power-switch --exit-status
+gh release view v0.1.2 --repo winwin-inc/power-switch
 ```
 
 Release 流程依次执行标签和版本检查、可复用 CI、五个平台构建、资产完整性检查、草稿上传与校验，最后才公开为预发布。CI 测试数据使用隔离目录，不运行会修改真实 WorkBuddy 等配置的手动验收工具。
@@ -92,8 +92,8 @@ Release 流程依次执行标签和版本检查、可复用 CI、五个平台构
 如果先在 GitHub 页面发布 Release，页面只会自动附带源码 ZIP/TAR，不会编译桌面应用。对于已经存在、且没有人工上传资产的 `v0.1.0` 正式版，在 `master` 包含补建工作流后，进入 **Actions → Release → Run workflow**，选择 `master`，填写 `tag = v0.1.0`，勾选 `repair_existing_release`。也可在已登录 GitHub CLI 后运行：
 
 ```sh
-gh workflow run release.yml --repo zbmain/power-switch --ref master -f tag=v0.1.0 -f repair_existing_release=true
-gh run list --repo zbmain/power-switch --workflow release.yml --limit 5
+gh workflow run release.yml --repo winwin-inc/power-switch --ref master -f tag=v0.1.0 -f repair_existing_release=true
+gh run list --repo winwin-inc/power-switch --workflow release.yml --limit 5
 ```
 
 手动运行会从指定标签检出应用源码并执行完整测试与五平台构建。只有全部产物齐全才开始上传。补建模式仅接受没有上传资产的现有正式版，源码 ZIP/TAR 不算上传资产；它不会移动标签或改变正式版状态。如果某个平台失败，请先修复构建问题，再重试；如已有部分资产上传，需人工核对后处理，不会自动覆盖正式版文件。后续版本应先推送标签，让工作流自动创建带安装包的预发布，不需在网页中提前创建 Release。
@@ -113,7 +113,7 @@ gh run list --repo zbmain/power-switch --workflow release.yml --limit 5
 下载全部产物后，在 macOS/Linux 校验：
 
 ```sh
-gh release download v0.1.0 --repo zbmain/power-switch --dir release-download
+gh release download v0.1.0 --repo winwin-inc/power-switch --dir release-download
 cd release-download
 shasum -a 256 -c SHA256SUMS
 ```
@@ -134,9 +134,9 @@ Windows 可执行 `Get-FileHash .\power-switch-v0.1.0-windows-x64.msi -Algorithm
 - 验证通过后，在 GitHub Release 编辑页取消“预发布”标记并设为 Latest；或执行以下命令：
 
 ```sh
-gh release edit v0.1.0 --repo zbmain/power-switch --prerelease=false --latest
+gh release edit v0.1.0 --repo winwin-inc/power-switch --prerelease=false --latest
 ```
 
-- 正式版的同标签重跑会被明确拒绝。发现问题应发布 `v0.1.1` 等补丁版本，不删除或移动原版本标签。
+- 正式版的同标签重跑会被明确拒绝。发现问题应发布新的补丁版本，不删除或移动原版本标签。
 - Actions 报 `Resource not accessible by integration` 时，检查组织策略是否允许工作流发布 Release，以及发布任务的 `contents: write` 是否保留。
 - 本地 Rust 测试需要临时回环端口供模拟服务器使用；受限沙箱禁止监听时应在允许回环端口的环境运行测试，不应删除或跳过这些测试。

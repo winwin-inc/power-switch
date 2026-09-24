@@ -1,13 +1,12 @@
-## power-switch v0.1.1
+## power-switch v0.1.2
 
-中文桌面模型与技能管理工具，支持 WorkBuddy、Claude Code 和 Codex。
+中文桌面模型管理工具，目前支持 WorkBuddy 和 Claude Code。
 
 ### 本次更新
 
-- 精简模型库、配置备份和设置页面，顶栏直接显示页面名称；新手指引移至顶栏。
-- 新增模型连通性测试。添加或编辑模型时，测试成功后才能保存；模型库显示本次会话的测试结果。
-- New API 导入固定使用 `default` 分组，同一实例和账号重复添加模型时复用专属密钥。
-- WorkBuddy 配置写入后可打开新建任务页。请在 WorkBuddy 中手动选择模型；已有任务不会自动切换。
+- Claude Code 配置使用 `ANTHROPIC_AUTH_TOKEN` 和 `ANTHROPIC_BASE_URL`。
+- Codex 与 OpenAI Responses 暂不支持，相关入口会显示为不可用。
+- 修改自动生成名称对应的模型 ID 时，名称会同步更新；手动命名的配置保持原名。
 
 ### 下载选择
 

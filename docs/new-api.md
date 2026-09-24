@@ -7,7 +7,7 @@ power-switch 内置 New API 接入模块。首版适配 `v1.0.0-rc.21` 的 Cooki
 1. 可先点击应用顶栏的 **新手指引**，通过三步动画了解申请密钥、模型入库和应用到 Agent 的流程。随后在模型库点击橙色 **从 New API 添加**。实例地址应为 HTTPS 根地址，不包含 `/v1`，且与 New API 的 `ServerAddress` 一致。
 2. 点击 **钉钉 / Keycloak 登录**，在独立窗口完成授权。应用不会读取或保存钉钉密码。
 3. 选择目前客户端、平台名称和模型。接口固定使用 `default` 分组，无需在页面选择。列表只显示该分组可用且服务端声明支持对应协议的模型，默认优先选中 `auto`；没有兼容的 `auto` 时选择第一个可用模型。平台名称默认为 `winwin`，可自行修改，切换模型时保留。
-4. 选择 Codex 时，填写上游实际的上下文窗口。图像、工具调用和推理档位需按上游能力设置，不能从模型别名推断。
+4. 按上游实际能力设置图像、工具调用和推理档位，不能从模型别名推断。
 5. 点击 **创建并添加**。同一实例、同一账号创建或复用一把 power-switch 专属密钥，不设置模型限制；首次创建使用 `default` 分组决定密钥的实际访问范围。应用会校验所选模型是否可访问，再保存模型。
 6. 可主动显示或复制密钥。**测试连接** 会发送一次最多请求 64 个输出 Token 的模型调用，可能消耗账户额度；保存和模型列表校验不发送推理请求。测试仅确认所选协议收到有效响应，不证明工具调用、图像或上下文能力。
 7. 返回模型库，模型名称展示为“平台名称 · 模型 ID”（例如 `winwin · auto`），接口调用仍使用原始模型 ID。使用原有 **应用到 Agent → 预览 → 确认覆盖并备份** 流程。
@@ -18,11 +18,12 @@ power-switch 内置 New API 接入模块。首版适配 `v1.0.0-rc.21` 的 Cooki
 
 ## 协议和接口
 
-| New API 元数据    | power-switch 协议    | 客户端      | API 基础地址      |
-| ----------------- | -------------------- | ----------- | ----------------- |
-| `openai`          | `openai-chat`        | WorkBuddy   | `https://实例/v1` |
-| `openai-response` | `openai-responses`   | Codex       | `https://实例/v1` |
-| `anthropic`       | `anthropic-messages` | Claude Code | `https://实例`    |
+| New API 元数据 | power-switch 协议    | 客户端      | API 基础地址      |
+| -------------- | -------------------- | ----------- | ----------------- |
+| `openai`       | `openai-chat`        | WorkBuddy   | `https://实例/v1` |
+| `anthropic`    | `anthropic-messages` | Claude Code | `https://实例`    |
+
+Codex 与 OpenAI Responses 暂不支持。之前保存的 `openai-responses` 配置仍会保留并显示为不可用，不能从界面重新选择或应用。
 
 登录时，Rust 使用新的 Cookie 容器请求 `/api/oauth/state`，在隔离 WebView 中打开提供方授权地址，保留 New API 原始回调 `/oauth/{provider}`。原生导航处理器校验回调来源、路径及唯一 `state`，截获授权码并阻止网页再次兑换，由同一 Rust HTTP 会话请求 `/api/oauth/{provider}`。Client Secret 和 Keycloak Token 始终由 New API 服务端处理。
 
@@ -65,3 +66,7 @@ OAuth 的原生窗口需要在 macOS 上完成一次真实钉钉授权验收：�
 - macOS `.app` 构建通过，输出位于 `src-tauri/target/release/bundle/macos/power-switch.app`。
 - ego-browser 完成浏览器演示的登录、协议筛选、Codex 上下文填写、模型导入和按需测试流程。浏览器截图接口超时，界面检查使用页面快照和 DOM 布局信息。
 - 尚未完成原生窗口真实钉钉扫码、生产密钥创建与实际付费调用；自动化结果不能替代这部分联调验收。
+
+## 当前支持范围
+
+v0.1.2 支持 WorkBuddy 和 Claude Code。Codex 客户端与 OpenAI Responses 协议入口已禁用；配置页面中的 Codex 设置不可编辑。

@@ -1,6 +1,6 @@
 # power-switch
 
-power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把模型配置应用到 WorkBuddy、Claude Code 和 Codex。
+power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把模型配置应用到 WorkBuddy 和 Claude Code。Codex 暂不支持。
 
 ## 下载与安装
 
@@ -36,7 +36,7 @@ power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把
 
 在模型卡片点击“应用到 Agent”：
 
-1. 选择 WorkBuddy、Claude Code 或 Codex。
+1. 选择 WorkBuddy 或 Claude Code。
 2. 预览将要修改的文件和内容。
 3. 确认后写入配置并自动备份。
 
@@ -71,7 +71,8 @@ WorkBuddy 写入成功后可以打开新建任务页，请在 WorkBuddy 中手�
 | ----------- | ------------------------------------- |
 | WorkBuddy   | 用户目录下的 `.workbuddy/models.json` |
 | Claude Code | 用户目录下的 `.claude/settings.json`  |
-| Codex       | 用户目录下的 `.codex/config.toml`     |
+
+Codex 暂不支持，其配置入口已禁用。
 
 修改路径后点击“保存设置”。设置只会影响之后的读取和写入，不会立即修改 Agent 配置。
 
@@ -99,3 +100,7 @@ WorkBuddy 的新任务页面支持打开，但深链不能可靠地替你选择�
 ### 如何获取其他平台安装包？
 
 前往 [Releases](https://github.com/winwin-inc/power-switch/releases)，选择最新版本并下载对应平台文件。`SHA256SUMS` 可用于核对文件完整性。
+
+### Codex 或 OpenAI Responses 为什么不可选？
+
+目前仅支持 WorkBuddy 和 Claude Code。之前保存的 OpenAI Responses 配置仍会显示，但不能重新选择或应用。

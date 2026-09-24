@@ -456,8 +456,12 @@ export function NewApiDialog({
                   }}
                 >
                   {Object.entries(agentLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
+                    <option
+                      key={value}
+                      value={value}
+                      disabled={value === "codex"}
+                    >
+                      {value === "codex" ? `${label}（暂不支持）` : label}
                     </option>
                   ))}
                 </select>

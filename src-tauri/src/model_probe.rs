@@ -27,7 +27,7 @@ async fn test_with_timeout(model: &ModelConfig, timeout: Duration) -> AppResult<
         .redirect(Policy::none())
         .connect_timeout(Duration::from_secs(10).min(timeout))
         .timeout(timeout)
-        .user_agent("power-switch/0.1.1")
+        .user_agent("power-switch/0.1.2")
         .build()
         .map_err(|_| "无法初始化模型测试连接")?;
     let (suffix, body) = match model.protocol {
