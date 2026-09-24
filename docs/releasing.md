@@ -12,7 +12,17 @@
 
 ## 首次配置
 
-仓库需要允许 GitHub Actions 运行。普通检查仅有 `contents: read`，发布任务单独使用 `contents: write` 和自动提供的 `GITHUB_TOKEN`，不需要配置个人访问令牌、Apple 证书或 Tauri 更新签名私钥。
+仓库需要允许 GitHub Actions 运行。普通检查仅有 `contents: read`，发布任务单独使用 `contents: write` 和自动提供的 `GITHUB_TOKEN`。生成应用内更新包还需要配置 Tauri 更新签名私钥。
+
+## 更新签名密钥
+
+更新签名私钥由维护者生成并离线备份，不要提交到仓库或粘贴到公开日志。将私钥文件内容添加为仓库 Actions Secret：
+
+```sh
+gh secret set TAURI_SIGNING_PRIVATE_KEY --repo winwin-inc/power-switch < /path/to/power-switch.key
+```
+
+Tauri 配置内的公钥用于验证更新包。设置仓库 Secret 后，Release 工作流才能构建带签名的更新资产。签名密钥丢失后，已安装版本无法验证后续更新。
 
 维护者本机需要 Git SSH 推送权限。查看私有仓库 Actions、修改默认分支及管理 Release 时，还需 GitHub CLI 登录：
 
@@ -33,15 +43,15 @@ CI 使用 Node.js 22、pnpm 10.18.3、Rust 1.92.0。前端依赖采用 `--frozen
 ```sh
 git switch master
 git pull --ff-only origin master
-git switch -c codex/release-v0.1.4
+git switch -c codex/release-v0.1.5
 pnpm install --frozen-lockfile
 ```
 
-以 `0.1.4` 为例，编辑 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 中的项目版本，三处必须完全一致；不要修改依赖版本来代替项目版本。更新 Cargo 锁文件中的本项目记录：
+以 `0.1.5` 为例，编辑 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 中的项目版本，三处必须完全一致；不要修改依赖版本来代替项目版本。更新 Cargo 锁文件中的本项目记录：
 
 ```sh
 cargo check --manifest-path src-tauri/Cargo.toml --no-default-features
-pnpm release:check -- v0.1.4
+pnpm release:check -- v0.1.5
 just check
 git diff --check
 git diff -- src-tauri/Cargo.lock
@@ -55,9 +65,9 @@ git diff -- src-tauri/Cargo.lock
 git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git diff --cached --check
 git diff --cached
-git commit -m "chore: prepare v0.1.4"
-git push -u origin codex/release-v0.1.4
-gh pr create --base master --title "Prepare v0.1.4" --body "Synchronize the application version for the next prerelease."
+git commit -m "chore: prepare v0.1.5"
+git push -u origin codex/release-v0.1.5
+gh pr create --base master --title "Prepare v0.1.5" --body "Synchronize the application version for the next prerelease."
 ```
 
 任何层级的 `.env`、`.venv`、`venv`、密钥和本地模型数据都不能暂存或提交。
@@ -69,10 +79,10 @@ PR 合并且 `master` CI 成功后：
 ```sh
 git switch master
 git pull --ff-only origin master
-pnpm release:check -- v0.1.4
+pnpm release:check -- v0.1.5
 git status --short
-git tag -a v0.1.4 -m "power-switch v0.1.4"
-git push origin v0.1.4
+git tag -a v0.1.5 -m "power-switch v0.1.5"
+git push origin v0.1.5
 ```
 
 首次发布使用项目已有版本 `0.1.0`，将上面标签替换为 `v0.1.0`，无需先增加版本号。打标签前必须确认工作区没有未提交的发布改动。
@@ -82,7 +92,7 @@ git push origin v0.1.4
 ```sh
 gh run list --repo winwin-inc/power-switch --workflow release.yml
 gh run watch RUN_ID --repo winwin-inc/power-switch --exit-status
-gh release view v0.1.4 --repo winwin-inc/power-switch
+gh release view v0.1.5 --repo winwin-inc/power-switch
 ```
 
 Release 流程依次执行标签和版本检查、可复用 CI、五个平台构建、资产完整性检查、草稿上传与校验，最后才公开为预发布。CI 测试数据使用隔离目录，不运行会修改真实 WorkBuddy 等配置的手动验收工具。
@@ -100,15 +110,15 @@ gh run list --repo winwin-inc/power-switch --workflow release.yml --limit 5
 
 ## 安装包与校验
 
-| 系统                        | Runner           | Rust target               | 文件后缀                           |
-| --------------------------- | ---------------- | ------------------------- | ---------------------------------- |
-| macOS Intel + Apple Silicon | macos-14         | universal-apple-darwin    | macos-universal.dmg / .zip         |
-| Windows x64                 | windows-2022     | x86_64-pc-windows-msvc    | windows-x64.msi / .zip             |
-| Windows ARM64               | windows-11-arm   | aarch64-pc-windows-msvc   | windows-arm64.msi / .zip           |
-| Linux x64                   | ubuntu-22.04     | x86_64-unknown-linux-gnu  | linux-x64.AppImage / .deb / .rpm   |
-| Linux ARM64                 | ubuntu-22.04-arm | aarch64-unknown-linux-gnu | linux-arm64.AppImage / .deb / .rpm |
+| 系统                        | Runner           | Rust target               | 文件后缀                                       |
+| --------------------------- | ---------------- | ------------------------- | ---------------------------------------------- |
+| macOS Intel + Apple Silicon | macos-14         | universal-apple-darwin    | macos-universal.dmg / .zip / updater `.tar.gz` |
+| Windows x64                 | windows-2022     | x86_64-pc-windows-msvc    | windows-x64.msi / .zip                         |
+| Windows ARM64               | windows-11-arm   | aarch64-pc-windows-msvc   | windows-arm64.msi / .zip                       |
+| Linux x64                   | ubuntu-22.04     | x86_64-unknown-linux-gnu  | linux-x64.AppImage / .deb / .rpm               |
+| Linux ARM64                 | ubuntu-22.04-arm | aarch64-unknown-linux-gnu | linux-arm64.AppImage / .deb / .rpm             |
 
-完整名称示例：`power-switch-v0.1.0-macos-universal.dmg`。每次发布必须包含 12 个非空安装产物和 1 个 `SHA256SUMS`。上传完成后，发布程序还会比较 GitHub 服务端返回的 SHA-256，校验失败不会公开草稿。
+完整名称示例：`power-switch-v0.1.0-macos-universal.dmg`。每次发布必须包含 12 个常规安装包、macOS 更新归档、`SHA256SUMS` 和 `latest.json`。Windows MSI 与 Linux AppImage 复用常规安装包作为更新包；更新签名写入 `latest.json`。上传完成后，发布程序还会比较 GitHub 服务端返回的 SHA-256，校验失败不会公开草稿。
 
 下载全部产物后，在 macOS/Linux 校验：
 
@@ -123,7 +133,8 @@ Windows 可执行 `Get-FileHash .\power-switch-v0.1.0-windows-x64.msi -Algorithm
 - macOS DMG 和 ZIP 中的应用均为通用二进制，构建时通过 `lipo` 校验 Intel 与 ARM64 架构。首版没有 Apple 开发者签名和公证；可能只有构建工具所需的临时签名。确认来源与校验值后，可在系统“隐私与安全性”查看允许打开的选项，不要关闭系统的全局安全检查。
 - Windows MSI 可引导安装 WebView2 并完成安装注册。ZIP 只包含应用可执行文件，需预装 WebView2；数据仍保存在用户应用目录，不保证注册 `power-switch://` 导入协议。系统可能显示未知发布者提示。
 - Linux AppImage 使用前需 `chmod +x`，部分发行版需要 FUSE；DEB/RPM 由系统包管理器安装。当前 New API 登录的系统凭证持久化仅实现 macOS/Windows，Linux 的此功能限制不因打包而改变。
-- 没有应用内自动更新、`latest.json` 或 Tauri 更新签名资产。升级通过 Releases 手动下载完成。
+- 应用启动时会检查 GitHub 最新正式版；发现更新后，左下角版本区域显示更新按钮。安装后 macOS/Linux 可点击重启；Windows 安装器会自动关闭应用，安装完成后重新打开应用。
+- 首次支持应用内更新的版本仍须由现有用户手动下载安装；后续版本才可从应用内更新。更新检查读取正式版 Release 中的 `latest.json`，因此需先将预发布提升为正式版。
 
 ## 重跑、正式发布与故障处理
 

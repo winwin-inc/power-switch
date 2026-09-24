@@ -266,9 +266,30 @@ nav {
   color: var(--muted);
   padding: 0 4px;
 }
-.version > span:last-child {
+.version .version-number {
   margin-left: auto;
   font-size: 9px;
+}
+.update-control {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  font-size: 9px;
+}
+.update-control.highlight {
+  color: var(--blue);
+  font-weight: 600;
+}
+.update-control:disabled {
+  cursor: progress;
+  opacity: 0.75;
 }
 .status-dot {
   width: 5px;

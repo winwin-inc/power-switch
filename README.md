@@ -99,7 +99,7 @@ WorkBuddy 的新任务页面支持打开，但深链不能可靠地替你选择�
 
 ### 如何获取其他平台安装包？
 
-前往 [Releases](https://github.com/winwin-inc/power-switch/releases)，选择最新版本并下载对应平台文件。`SHA256SUMS` 可用于核对文件完整性。
+应用启动后会检查新版本；发现更新时，点击左下角版本号下方的提示即可安装，完成后按提示重启。macOS DMG、Windows MSI 和 Linux AppImage 支持应用内更新；其他安装包可前往 [Releases](https://github.com/winwin-inc/power-switch/releases) 手动下载。`SHA256SUMS` 可用于核对文件完整性。
 
 ### Codex 或 OpenAI Responses 为什么不可选？
 

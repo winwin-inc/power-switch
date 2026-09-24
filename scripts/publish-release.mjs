@@ -1,8 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkVersion, sha256, writeChecksums } from "./release.mjs";
+import {
+  checkVersion,
+  expectedAssets,
+  expectedSignatures,
+  sha256,
+  writeChecksums,
+} from "./release.mjs";
 
 /** 禁止修改正式版；已有预发布只允许同一提交的幂等重跑。 */
 export function assertPublishable(release, commit, repairStable = false) {
@@ -54,6 +60,53 @@ async function verifyUploads(repository, releaseId, directory, names) {
   }
 }
 
+/** Build Tauri's signed updater manifest from release bundles and private signature sidecars. */
+export async function writeUpdaterManifest(directory, repository, tag) {
+  const signature = async (platform) =>
+    (
+      await readFile(
+        join(directory, `power-switch-${tag}-${platform}.sig`),
+        "utf8",
+      )
+    ).trim();
+  const assetUrl = (platform) =>
+    `https://github.com/${repository}/releases/download/${tag}/${expectedAssets(tag, platform).find((name) => name.endsWith(platform === "macos-universal" ? ".tar.gz" : platform.startsWith("windows") ? ".msi" : ".AppImage"))}`;
+  const mac = {
+    signature: await signature("macos-universal"),
+    url: assetUrl("macos-universal"),
+  };
+  const platforms = {
+    "darwin-aarch64": mac,
+    "darwin-x86_64": mac,
+    "windows-x86_64": {
+      signature: await signature("windows-x64"),
+      url: assetUrl("windows-x64"),
+    },
+    "windows-aarch64": {
+      signature: await signature("windows-arm64"),
+      url: assetUrl("windows-arm64"),
+    },
+    "linux-x86_64": {
+      signature: await signature("linux-x64"),
+      url: assetUrl("linux-x64"),
+    },
+    "linux-aarch64": {
+      signature: await signature("linux-arm64"),
+      url: assetUrl("linux-arm64"),
+    },
+  };
+  const manifest = {
+    version: tag,
+    notes: `power-switch ${tag} update`,
+    pub_date: new Date().toISOString(),
+    platforms,
+  };
+  await writeFile(
+    join(directory, "latest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+}
+
 /** 通过草稿完成资产上传与验证，全部成功后才对用户公开为预发布。 */
 async function main() {
   const repository = process.env.GITHUB_REPOSITORY;
@@ -91,6 +144,8 @@ async function main() {
   });
   assertPublishable(release, commit, repairStable);
   const repairingStable = release && !release.draft && !release.prerelease;
+  await writeUpdaterManifest(directory, repository, tag);
+  names.push("latest.json");
   if (release && !release.draft && !repairingStable) {
     await verifyUploads(repository, release.id, directory, names);
     console.log(
