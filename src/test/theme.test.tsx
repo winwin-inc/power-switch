@@ -22,11 +22,17 @@ const initialData: AppData = {
   dataDir: "/test/app",
   backups: [],
 };
+let persistedData: AppData;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(api.data).mockResolvedValue(structuredClone(initialData));
-  vi.mocked(api.settings).mockResolvedValue();
+  persistedData = structuredClone(initialData);
+  vi.mocked(api.data).mockImplementation(async () =>
+    structuredClone(persistedData),
+  );
+  vi.mocked(api.settings).mockImplementation(async (settings) => {
+    persistedData.settings = structuredClone(settings);
+  });
 });
 
 /** Open the settings through the same navigation used in the desktop app. */
@@ -39,24 +45,30 @@ async function renderSettings() {
 }
 
 describe("appearance settings", () => {
-  it("previews immediately and restores the saved theme when leaving without saving", async () => {
+  it("saves a selected theme immediately and keeps it after navigation", async () => {
     const { user } = await renderSettings();
     await user.click(screen.getByRole("button", { name: "深色" }));
+    await screen.findByText("主题已保存。");
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(screen.getByRole("button", { name: "深色" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     await user.click(screen.getByRole("button", { name: "浅色" }));
+    await screen.findByText("主题已保存。");
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
     await user.click(screen.getByRole("button", { name: "深色" }));
-    expect(api.settings).not.toHaveBeenCalled();
+    await screen.findByText("主题已保存。");
+    expect(api.settings).toHaveBeenLastCalledWith({
+      ...initialData.settings,
+      theme: "dark",
+    });
     expect(api.apply).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: /^模型库/ }));
-    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     await user.click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.getByRole("button", { name: "浅色" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "深色" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -124,13 +136,12 @@ describe("appearance settings", () => {
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 
-  it("keeps failed saves as a preview and restores the last saved theme on exit", async () => {
+  it("restores the saved theme when an automatic theme save fails", async () => {
     vi.mocked(api.settings).mockRejectedValueOnce(new Error("设置保存失败"));
     const { user } = await renderSettings();
     await user.click(screen.getByRole("button", { name: "深色" }));
-    await user.click(screen.getByRole("button", { name: "保存设置" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("设置保存失败");
-    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
     expect(screen.queryByText("设置已保存。")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^模型库/ }));

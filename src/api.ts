@@ -53,6 +53,8 @@ export const api = {
   restore: (id: string) => call<ApplyPreview>("preview_restore", { id }),
   /** Delete a backup only after the separate destructive-action confirmation. */
   deleteBackup: (id: string) => call<void>("delete_backup", { id }),
+  /** Delete all backup records only after the separate destructive-action confirmation. */
+  deleteAllBackups: () => call<number>("delete_all_backups"),
   /** Decode an import link into safe display metadata. */
   importPreview: (link: string) =>
     call<ImportPreview>("preview_import", { link }),

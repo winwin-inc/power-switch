@@ -8,6 +8,7 @@ import {
 import {
   ArrowDownToLine,
   ArrowRight,
+  Cable,
   Check,
   CheckCircle2,
   CircleHelp,
@@ -77,6 +78,7 @@ type ModalState =
   | { kind: "share"; model: ModelConfig }
   | { kind: "delete"; model: ModelConfig }
   | { kind: "delete-backup"; backup: BackupRecord }
+  | { kind: "delete-all-backups" }
   | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
 
@@ -92,20 +94,43 @@ export default function App() {
   const [filter, setFilter] = useState("all");
   const [modal, setModal] = useState<ModalState>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<Notice>(null);
+  const [notice, setNoticeState] = useState<Notice>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noticeRevision = useRef(0);
   const [modelTests, setModelTests] = useState<Record<string, ModelTestState>>(
     {},
   );
   const pendingTests = useRef(new Map<string, symbol>());
   const [links, setLinks] = useState<string[]>([]);
   const seenLinks = useRef(new Map<string, number>());
+  /** Show a notice for five seconds, restarting its timer when replaced or manually dismissed. */
+  const setNotice = useCallback((next: Notice) => {
+    noticeRevision.current += 1;
+    const revision = noticeRevision.current;
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = null;
+    setNoticeState(next);
+    if (!next) return;
+    noticeTimer.current = setTimeout(() => {
+      if (noticeRevision.current !== revision) return;
+      noticeTimer.current = null;
+      setNoticeState(null);
+    }, 5000);
+  }, []);
+  useEffect(
+    () => () => {
+      noticeRevision.current += 1;
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
   /** Reload authoritative native state following a successful mutation. */
   const refresh = useCallback(async () => {
     setData(await api.data());
   }, []);
   useEffect(() => {
     void refresh().catch((e) => setNotice({ kind: "error", text: String(e) }));
-  }, [refresh]);
+  }, [refresh, setNotice]);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     /** Apply explicit appearance or react to OS appearance changes. */
@@ -158,7 +183,7 @@ export default function App() {
       canceled = true;
       unlisten?.();
     };
-  }, []);
+  }, [setNotice]);
   useEffect(() => {
     if (!links.length || modal || busy || !data) return;
     const link = links[0];
@@ -169,7 +194,7 @@ export default function App() {
       .then((preview) => setModal({ kind: "import-review", preview }))
       .catch((e) => setNotice({ kind: "error", text: String(e) }))
       .finally(() => setBusy(false));
-  }, [links, modal, busy, data]);
+  }, [links, modal, busy, data, setNotice]);
 
   /** Run one UI mutation with visible progress and safe error reporting. */
   async function run(action: () => Promise<void>) {
@@ -295,7 +320,11 @@ export default function App() {
           </button>
           <button className="nav-item" disabled title="待开放">
             <BookOpen size={19} />
-            技能<span className="nav-pending">待开放</span>
+            SKILL 技能<span className="nav-pending">待开放</span>
+          </button>
+          <button className="nav-item" disabled title="待开放">
+            <Cable size={19} />
+            MCP 连接器<span className="nav-pending">待开放</span>
           </button>
           <button
             className={page === "settings" ? "nav-item active" : "nav-item"}
@@ -319,7 +348,7 @@ export default function App() {
           </div>
           <div className="version">
             <span className="status-dot" />
-            power-switch <span>v0.1.2</span>
+            power-switch <span>v0.1.3</span>
           </div>
         </div>
       </aside>
@@ -719,6 +748,16 @@ export default function App() {
               )}
               {page === "backups" && (
                 <>
+                  <div className="backup-toolbar">
+                    <button
+                      className="button danger"
+                      disabled={busy || data.backups.length === 0}
+                      onClick={() => setModal({ kind: "delete-all-backups" })}
+                    >
+                      <Trash2 size={15} />
+                      清空备份
+                    </button>
+                  </div>
                   <div className="info-note">
                     <FileClock size={19} />
                     <span>
@@ -799,7 +838,23 @@ export default function App() {
                 <SettingsPage
                   data={data}
                   busy={busy}
-                  onThemePreview={setThemePreview}
+                  onThemeSave={(theme) => {
+                    setThemePreview(theme);
+                    void run(async () => {
+                      try {
+                        await api.settings({ ...data.settings, theme });
+                        await refresh();
+                        setNotice({
+                          kind: "success",
+                          text: "主题已保存。",
+                        });
+                      } catch (error) {
+                        setThemePreview(null);
+                        throw error;
+                      }
+                      setThemePreview(null);
+                    });
+                  }}
                   onSave={(settings) =>
                     void run(async () => {
                       await api.settings(settings);
@@ -1002,6 +1057,49 @@ export default function App() {
               }
             >
               确认删除备份
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal?.kind === "delete-all-backups" && (
+        <Modal
+          title="清空所有模型配置备份"
+          description={`确认删除全部 ${data?.backups.length ?? 0} 条历史备份记录？`}
+          onClose={closeModal}
+          busy={busy}
+        >
+          <div className="warning-note">
+            <Trash2 size={18} />
+            <div>
+              此操作无法撤销。只会删除备份记录，不会修改当前模型库或 Agent
+              配置。
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button
+              className="button secondary"
+              disabled={busy}
+              onClick={closeModal}
+            >
+              取消
+            </button>
+            <button
+              className="button danger"
+              disabled={busy || !data?.backups.length}
+              onClick={() =>
+                void run(async () => {
+                  try {
+                    const count = await api.deleteAllBackups();
+                    await done(`已清空 ${count} 条历史备份记录。`);
+                  } catch (error) {
+                    setModal(null);
+                    await refresh().catch(() => {});
+                    throw error;
+                  }
+                })
+              }
+            >
+              确认清空备份
             </button>
           </div>
         </Modal>
@@ -1220,20 +1318,15 @@ function ShareModel({ model }: { model: ModelConfig }) {
 function SettingsPage({
   data,
   busy,
-  onThemePreview,
+  onThemeSave,
   onSave,
 }: {
   data: AppData;
   busy: boolean;
-  onThemePreview: (theme: Settings["theme"] | null) => void;
+  onThemeSave: (theme: Settings["theme"]) => void;
   onSave: (settings: Settings) => void;
 }) {
   const [settings, setSettings] = useState(data.settings);
-  useEffect(() => {
-    // Preview the draft immediately; leaving settings restores the saved theme.
-    onThemePreview(settings.theme);
-    return () => onThemePreview(null);
-  }, [settings.theme, onThemePreview]);
   const [pickerError, setPickerError] = useState("");
   const [picking, setPicking] = useState(false);
   /** Update the editable path only after a native selection; saving remains explicit. */
@@ -1277,7 +1370,7 @@ function SettingsPage({
           <Monitor size={19} />
           <div>
             <h2>外观</h2>
-            <p>选择后立即预览，保存设置后保留。</p>
+            <p>主题选择后自动保存；配置路径修改后需点击下方保存设置。</p>
           </div>
         </div>
         <div className="theme-options">
@@ -1294,7 +1387,11 @@ function SettingsPage({
               className={settings.theme === value ? "selected" : ""}
               aria-pressed={settings.theme === value}
               disabled={busy}
-              onClick={() => setSettings({ ...settings, theme: value })}
+              onClick={() => {
+                if (settings.theme === value) return;
+                setSettings((old) => ({ ...old, theme: value }));
+                onThemeSave(value);
+              }}
             >
               <Icon size={22} />
               {label}

@@ -1,12 +1,13 @@
-## power-switch v0.1.2
+## power-switch v0.1.3
 
 中文桌面模型管理工具，目前支持 WorkBuddy 和 Claude Code。
 
 ### 本次更新
 
-- Claude Code 配置使用 `ANTHROPIC_AUTH_TOKEN` 和 `ANTHROPIC_BASE_URL`。
-- Codex 与 OpenAI Responses 暂不支持，相关入口会显示为不可用。
-- 修改自动生成名称对应的模型 ID 时，名称会同步更新；手动命名的配置保持原名。
+- 外观主题选择后自动保存，切换页面或重启应用后仍会保留。
+- 全局成功和错误提示默认 5 秒后自动消失，也可以手动关闭。
+- 模型配置备份页新增“清空备份”，确认后删除所有历史备份记录，不修改模型库或 Agent 配置。
+- 侧栏增加待开放的 MCP 连接器入口；技能名称调整为“SKILL 技能”。
 
 ### 下载选择
 

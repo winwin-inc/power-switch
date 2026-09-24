@@ -555,6 +555,19 @@ impl Engine {
         Ok(())
     }
 
+    /// Delete every listed backup through the same UUID and regular-file checks as single deletion.
+    pub fn delete_all_backups(&mut self) -> AppResult<usize> {
+        let ids = self
+            .list_backups()?
+            .into_iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>();
+        for id in &ids {
+            self.delete_backup(id)?;
+        }
+        Ok(ids.len())
+    }
+
     /// Read the current path preferences without loading credential-bearing backup bodies.
     pub fn current_settings(&self) -> AppResult<Settings> {
         Ok(self.load()?.settings)
