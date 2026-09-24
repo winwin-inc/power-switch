@@ -13,12 +13,13 @@ import test from "node:test";
 import {
   checkVersion,
   expectedAssets,
+  expectedSignatures,
   packageVersion,
   validateAssets,
   versionFromTag,
   writeChecksums,
 } from "./release.mjs";
-import { assertPublishable } from "./publish-release.mjs";
+import { assertPublishable, writeUpdaterManifest } from "./publish-release.mjs";
 
 /** 为每个测试创建隔离目录，并在测试结束后删除测试自身的数据。 */
 async function temporaryDirectory(t) {
@@ -52,6 +53,8 @@ async function assetFixture(t) {
   const directory = await temporaryDirectory(t);
   for (const name of expectedAssets("v0.1.0"))
     await writeFile(join(directory, name), "abc");
+  for (const name of expectedSignatures("v0.1.0"))
+    await writeFile(join(directory, name), "signature");
   return directory;
 }
 
@@ -111,20 +114,43 @@ test("does not use another crate's version or ambiguous package tables", () => {
   assert.throws(() => packageVersion(table + table, true));
 });
 
-test("expects exactly 12 unique packages for five targets", () => {
+test("expects all install and updater bundles for five targets", () => {
   const names = expectedAssets("v0.1.0");
-  assert.equal(names.length, 12);
-  assert.equal(new Set(names).size, 12);
-  assert.equal(expectedAssets("v0.1.0", "macos-universal").length, 2);
+  assert.equal(names.length, 13);
+  assert.equal(new Set(names).size, 13);
+  assert.equal(expectedSignatures("v0.1.0").length, 5);
+  assert.equal(expectedAssets("v0.1.0", "macos-universal").length, 3);
   assert.equal(expectedAssets("v0.1.0", "linux-arm64").length, 3);
   assert.throws(() => expectedAssets("v0.1.0", "unknown"));
+});
+
+test("generates a signed updater manifest for all supported OS architectures", async (t) => {
+  const directory = await assetFixture(t);
+  await writeUpdaterManifest(directory, "winwin-inc/power-switch", "v0.1.0");
+  const manifest = JSON.parse(
+    await readFile(join(directory, "latest.json"), "utf8"),
+  );
+  assert.equal(manifest.version, "v0.1.0");
+  assert.deepEqual(Object.keys(manifest.platforms).sort(), [
+    "darwin-aarch64",
+    "darwin-x86_64",
+    "linux-aarch64",
+    "linux-x86_64",
+    "windows-aarch64",
+    "windows-x86_64",
+  ]);
+  assert.equal(
+    manifest.platforms["darwin-aarch64"].url,
+    "https://github.com/winwin-inc/power-switch/releases/download/v0.1.0/power-switch-v0.1.0-macos-universal.tar.gz",
+  );
+  assert.equal(manifest.platforms["windows-x86_64"].signature, "signature");
 });
 
 test("generates known SHA-256 values and permits verification on rerun", async (t) => {
   const directory = await assetFixture(t);
   await writeChecksums(directory, "v0.1.0");
   const sums = await readFile(join(directory, "SHA256SUMS"), "utf8");
-  assert.equal(sums.trim().split("\n").length, 12);
+  assert.equal(sums.trim().split("\n").length, 13);
   assert.ok(
     sums
       .split("\n")

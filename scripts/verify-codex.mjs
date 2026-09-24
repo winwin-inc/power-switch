@@ -1,11 +1,14 @@
 import { spawn, execFileSync } from "node:child_process";
 import { createInterface } from "node:readline";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Validate a generated catalog using the installed Codex parser without touching the user's CODEX_HOME. */
 async function main() {
+  const { version } = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  );
   const root = await mkdtemp(join(tmpdir(), "power-switch-codex-"));
   execFileSync(
     "cargo",
@@ -79,7 +82,7 @@ async function main() {
         id: 1,
         method: "initialize",
         params: {
-          clientInfo: { name: "power_switch_acceptance", version: "0.1.4" },
+          clientInfo: { name: "power_switch_acceptance", version },
           capabilities: { experimentalApi: true },
         },
       });

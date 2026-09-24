@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 export const targets = {
   "macos-universal": {
     triple: "universal-apple-darwin",
-    extensions: ["dmg", "zip"],
+    extensions: ["dmg", "zip", "tar.gz"],
   },
   "windows-x64": {
     triple: "x86_64-pc-windows-msvc",
@@ -34,6 +34,14 @@ export const targets = {
     extensions: ["AppImage", "deb", "rpm"],
   },
 };
+
+/** List local signature sidecars required to create the signed updater manifest. */
+export function expectedSignatures(tag) {
+  versionFromTag(tag);
+  return Object.keys(targets).map(
+    (platform) => `power-switch-${tag}-${platform}.sig`,
+  );
+}
 
 /** 校验 v 前缀 SemVer，拒绝数字标识符前导零及不安全的文件名字符。 */
 export function versionFromTag(tag) {
@@ -107,7 +115,7 @@ export function expectedAssets(tag, platform) {
 export async function validateAssets(directory, tag) {
   const expected = expectedAssets(tag);
   const actual = (await readdir(directory))
-    .filter((name) => name !== "SHA256SUMS")
+    .filter((name) => name !== "SHA256SUMS" && !name.endsWith(".sig"))
     .sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected))
     throw new Error(
@@ -118,6 +126,19 @@ export async function validateAssets(directory, tag) {
     if (!stat.isFile() || stat.size === 0)
       throw new Error(`Release asset is not a nonempty regular file: ${name}`);
   }
+  for (const name of expectedSignatures(tag)) {
+    const stat = await lstat(join(directory, name));
+    if (!stat.isFile() || stat.size === 0)
+      throw new Error(`Updater signature is missing or empty: ${name}`);
+  }
+  const signatureFiles = (await readdir(directory))
+    .filter((name) => name.endsWith(".sig"))
+    .sort();
+  if (
+    JSON.stringify(signatureFiles) !==
+    JSON.stringify(expectedSignatures(tag).sort())
+  )
+    throw new Error("Updater signature sidecars are incomplete or unexpected");
   return expected;
 }
 
@@ -180,9 +201,13 @@ export async function collectAssets(root, directory, tag, platform) {
   );
   await mkdir(directory, { recursive: true });
   for (const name of names) {
-    const extension = name.split(".").at(-1);
+    const extension = name.endsWith(".tar.gz")
+      ? "tar.gz"
+      : name.split(".").at(-1);
     const output = join(directory, name);
-    if (extension !== "zip") {
+    if (extension === "tar.gz") {
+      await copyFile(await bundleFile(join(base, "bundle"), "tar.gz"), output);
+    } else if (extension !== "zip") {
       await copyFile(await bundleFile(join(base, "bundle"), extension), output);
     } else if (platform === "macos-universal") {
       const app = join(base, "bundle/macos/power-switch.app");
@@ -224,6 +249,11 @@ export async function collectAssets(root, directory, tag, platform) {
     if (!stat.isFile() || stat.size === 0)
       throw new Error(`Empty bundle: ${output}`);
   }
+  const signatureSource = await bundleFile(join(base, "bundle"), "sig");
+  await copyFile(
+    signatureSource,
+    join(directory, `power-switch-${tag}-${platform}.sig`),
+  );
 }
 
 /** 提供版本校验、平台产物收集和统一校验和生成三个 CLI 子命令。 */

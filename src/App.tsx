@@ -36,7 +36,13 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import packageJson from "../package.json";
 import { api, isDesktop } from "./api";
+import {
+  checkForUpdate,
+  installPendingUpdate,
+  restartUpdatedApp,
+} from "./updater";
 import { pickLocalPath } from "./file-picker";
 import { SkillsPage } from "./SkillsPage";
 import { NewApiDialog } from "./NewApiDialog";
@@ -81,6 +87,13 @@ type ModalState =
   | { kind: "delete-all-backups" }
   | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
+type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "available"; version: string }
+  | { kind: "installing"; percentage: number | null }
+  | { kind: "ready" }
+  | { kind: "error"; message: string };
 
 /** Coordinate desktop state and the explicitly confirmed model/apply/import workflows. */
 export default function App() {
@@ -95,6 +108,8 @@ export default function App() {
   const [modal, setModal] = useState<ModalState>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNoticeState] = useState<Notice>(null);
+  const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
+  const updateRequest = useRef(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeRevision = useRef(0);
   const [modelTests, setModelTests] = useState<Record<string, ModelTestState>>(
@@ -131,6 +146,35 @@ export default function App() {
   useEffect(() => {
     void refresh().catch((e) => setNotice({ kind: "error", text: String(e) }));
   }, [refresh, setNotice]);
+  useEffect(() => {
+    if (!isDesktop) return;
+    let canceled = false;
+    const timer = setTimeout(() => {
+      if (canceled || updateRequest.current) return;
+      updateRequest.current = true;
+      setUpdateState({ kind: "checking" });
+      void checkForUpdate()
+        .then((update) => {
+          if (!canceled)
+            setUpdateState(
+              update
+                ? { kind: "available", version: update.version }
+                : { kind: "idle" },
+            );
+        })
+        .catch(() => {
+          if (!canceled)
+            setUpdateState({ kind: "error", message: "检查失败，点击重试" });
+        })
+        .finally(() => {
+          updateRequest.current = false;
+        });
+    }, 1800);
+    return () => {
+      canceled = true;
+      clearTimeout(timer);
+    };
+  }, []);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     /** Apply explicit appearance or react to OS appearance changes. */
@@ -348,8 +392,86 @@ export default function App() {
           </div>
           <div className="version">
             <span className="status-dot" />
-            power-switch <span>v0.1.4</span>
+            <span>power-switch</span>
+            <span className="version-number">v{packageJson.version}</span>
           </div>
+          {isDesktop && (
+            <button
+              className={`update-control ${updateState.kind === "available" || updateState.kind === "ready" ? "highlight" : ""}`}
+              type="button"
+              disabled={
+                updateState.kind === "checking" ||
+                updateState.kind === "installing"
+              }
+              onClick={() => {
+                if (updateState.kind === "ready") {
+                  void restartUpdatedApp().catch((error) =>
+                    setUpdateState({ kind: "error", message: String(error) }),
+                  );
+                  return;
+                }
+                if (updateState.kind === "available") {
+                  setUpdateState({ kind: "installing", percentage: 0 });
+                  void installPendingUpdate((percentage) =>
+                    setUpdateState({ kind: "installing", percentage }),
+                  )
+                    .then(() => setUpdateState({ kind: "ready" }))
+                    .catch((error) =>
+                      setUpdateState({ kind: "error", message: String(error) }),
+                    );
+                  return;
+                }
+                if (updateRequest.current) return;
+                updateRequest.current = true;
+                setUpdateState({ kind: "checking" });
+                void checkForUpdate()
+                  .then((update) =>
+                    setUpdateState(
+                      update
+                        ? { kind: "available", version: update.version }
+                        : { kind: "idle" },
+                    ),
+                  )
+                  .catch((error) =>
+                    setUpdateState({ kind: "error", message: String(error) }),
+                  )
+                  .finally(() => {
+                    updateRequest.current = false;
+                  });
+              }}
+              title="检查并安装 power-switch 更新"
+            >
+              {updateState.kind === "checking" ? (
+                <>
+                  <LoaderCircle size={12} className="spin" /> 正在检查更新
+                </>
+              ) : updateState.kind === "available" ? (
+                <>
+                  <Download size={12} /> 发现新版本 v{updateState.version} ·
+                  点击更新
+                </>
+              ) : updateState.kind === "installing" ? (
+                <>
+                  <LoaderCircle size={12} className="spin" /> 正在更新
+                  {updateState.percentage === null
+                    ? "…"
+                    : ` ${updateState.percentage}%`}
+                </>
+              ) : updateState.kind === "ready" ? (
+                <>
+                  <CheckCircle2 size={12} /> 更新完成 · 重启应用
+                </>
+              ) : updateState.kind === "error" ? (
+                <>
+                  <Download size={12} /> {updateState.message}
+                </>
+              ) : (
+                <>
+                  <Download size={12} /> 检查更新
+                </>
+              )}
+            </button>
+          )}
         </div>
       </aside>
       <main className="main">
