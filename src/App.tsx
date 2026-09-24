@@ -319,7 +319,7 @@ export default function App() {
           </div>
           <div className="version">
             <span className="status-dot" />
-            power-switch <span>v0.1.1</span>
+            power-switch <span>v0.1.2</span>
           </div>
         </div>
       </aside>
@@ -435,7 +435,7 @@ export default function App() {
                       </span>
                       <span>
                         <span className="mini-dot graphite" />
-                        Codex
+                        Codex（暂不支持）
                       </span>
                     </div>
                   </section>
@@ -449,6 +449,10 @@ export default function App() {
                       ].map(([value, label]) => (
                         <button
                           key={value}
+                          disabled={value === "codex"}
+                          title={
+                            value === "codex" ? "Codex 暂不支持" : undefined
+                          }
                           className={filter === value ? "selected" : ""}
                           onClick={() => setFilter(value)}
                         >
@@ -520,7 +524,9 @@ export default function App() {
                               <span
                                 className={`tag protocol-tag ${model.protocol}`}
                               >
-                                {protocolLabels[model.protocol]}
+                                {model.protocol === "openai-responses"
+                                  ? "OpenAI Responses（暂不支持）"
+                                  : protocolLabels[model.protocol]}
                               </span>
                             </div>
                             <div className="card-details">
@@ -545,7 +551,9 @@ export default function App() {
                               <div>
                                 <span className="detail-label">适用 AGENT</span>
                                 <span>
-                                  {agentLabels[nativeAgent[model.protocol]]}
+                                  {nativeAgent[model.protocol] === "codex"
+                                    ? "Codex（暂不支持）"
+                                    : agentLabels[nativeAgent[model.protocol]]}
                                 </span>
                               </div>
                             </div>
@@ -1313,7 +1321,9 @@ function SettingsPage({
           return (
             <div className="field path-field" key={agent.agent}>
               <span>
-                {agentLabels[agent.agent]}{" "}
+                {agent.agent === "codex"
+                  ? "Codex（暂不支持）"
+                  : agentLabels[agent.agent]}{" "}
                 {agent.agent === "codex" ? "配置目录" : "配置文件"}
                 <span className={`tag ${agent.exists ? "green" : ""}`}>
                   {agent.exists ? "已找到配置" : "尚未创建"}
@@ -1324,6 +1334,7 @@ function SettingsPage({
                   aria-label={`${agentLabels[agent.agent]} 配置路径`}
                   value={settings[key] ?? ""}
                   placeholder="自动识别（推荐）"
+                  disabled={busy || picking || agent.agent === "codex"}
                   onChange={(e) =>
                     setSettings({ ...settings, [key]: e.target.value || null })
                   }
@@ -1346,7 +1357,7 @@ function SettingsPage({
                 <button
                   type="button"
                   className="button secondary"
-                  disabled={busy || picking}
+                  disabled={busy || picking || agent.agent === "codex"}
                   onClick={() =>
                     void choosePath(key, "directory", agentLabels[agent.agent])
                   }

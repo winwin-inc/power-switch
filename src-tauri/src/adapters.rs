@@ -137,6 +137,7 @@ pub fn claude(text: Option<&str>, model: &ModelConfig) -> AppResult<Vec<u8>> {
         .ok_or("Claude Code env 必须为对象")?;
     for key in [
         "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "ANTHROPIC_SMALL_FAST_MODEL",
     ] {
@@ -151,7 +152,7 @@ pub fn claude(text: Option<&str>, model: &ModelConfig) -> AppResult<Vec<u8>> {
         env.remove(&key);
     }
     env.insert("ANTHROPIC_BASE_URL".into(), json!(model.base_url));
-    env.insert("ANTHROPIC_API_KEY".into(), json!(model.api_key));
+    env.insert("ANTHROPIC_AUTH_TOKEN".into(), json!(model.api_key));
     for key in [
         "ANTHROPIC_MODEL",
         "ANTHROPIC_DEFAULT_FABLE_MODEL",

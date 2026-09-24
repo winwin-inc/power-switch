@@ -131,8 +131,7 @@ describe("New API connector", () => {
     expect(newApi.test).toHaveBeenCalledWith("owned-model");
   });
 
-  it("filters Codex protocols and requires an explicit context window before creating a key", async () => {
-    const user = userEvent.setup();
+  it("keeps the Codex client unavailable", async () => {
     render(
       <NewApiDialog
         onClose={vi.fn()}
@@ -140,45 +139,11 @@ describe("New API connector", () => {
       />,
     );
     await screen.findByRole("option", { name: "chat-model" });
-    const platform = screen.getByRole("textbox", { name: "平台名称" });
-    await user.clear(platform);
-    await user.type(platform, "   ");
-    expect(screen.getByRole("button", { name: "创建并添加" })).toBeDisabled();
-    await user.clear(platform);
-    await user.type(platform, " 自建平台 ");
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: /^模型/ }),
-      "chat-model",
-    );
-    expect(platform).toHaveValue(" 自建平台 ");
-    await user.selectOptions(screen.getByLabelText("目前客户端"), "codex");
+    const client = screen.getByLabelText("目前客户端");
+    expect(client.querySelector('option[value="codex"]')).toBeDisabled();
     expect(
-      await screen.findByRole("option", { name: "responses-model" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("option", { name: "chat-model" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("option", { name: "auto" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: /^模型/ })).toHaveValue(
-      "responses-model",
-    );
-    expect(platform).toHaveValue(" 自建平台 ");
-    await user.click(screen.getByRole("button", { name: "创建并添加" }));
-    expect(newApi.importModel).not.toHaveBeenCalled();
-    await user.type(screen.getByRole("spinbutton"), "128000");
-    await user.click(screen.getByRole("button", { name: "创建并添加" }));
-    await waitFor(() =>
-      expect(newApi.importModel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          protocol: "openai-responses",
-          modelId: "responses-model",
-          name: "自建平台 · responses-model",
-          contextWindow: 128000,
-        }),
-      ),
-    );
+      screen.getByRole("option", { name: /Codex.*暂不支持/ }),
+    ).toBeDisabled();
   });
 
   it("lets an uncertain creation reconcile before the user explicitly opts into a new attempt", async () => {

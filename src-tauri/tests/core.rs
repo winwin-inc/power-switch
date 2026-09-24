@@ -166,7 +166,8 @@ fn claude_merges_without_touching_permissions_or_hooks() {
     assert_eq!(result["permissions"], root["permissions"]);
     assert_eq!(result["hooks"], root["hooks"]);
     assert_eq!(result["env"]["HTTP_PROXY"], root["env"]["HTTP_PROXY"]);
-    assert!(result["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
+    assert_eq!(result["env"]["ANTHROPIC_AUTH_TOKEN"], "sk-TEST-ONLY");
+    assert!(result["env"].get("ANTHROPIC_API_KEY").is_none());
     assert!(result["env"]
         .get("ANTHROPIC_DEFAULT_OPUS_MODEL_NAME")
         .is_none());

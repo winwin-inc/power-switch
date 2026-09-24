@@ -522,16 +522,19 @@ describe("settings and backup controls", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "选择 Claude Code 配置文件" }),
     );
-    await userEvent.click(
+    expect(
+      screen.getByRole("textbox", { name: "Codex 配置路径" }),
+    ).toBeDisabled();
+    expect(
       screen.getByRole("button", { name: /选择 Codex.*配置目录/ }),
-    );
+    ).toBeDisabled();
     expect(api.settings).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "保存设置" }));
     expect(api.settings).toHaveBeenCalledWith({
       ...data.settings,
       workbuddyPath: "/portable/models.json",
       claudePath: "/chosen/custom.json",
-      codexDir: "C:\\portable\\codex",
+      codexDir: null,
     });
     expect(api.apply).not.toHaveBeenCalled();
   });
@@ -584,6 +587,22 @@ describe("confirmation boundary", () => {
       }),
     ).toBeChecked();
     expect(next).toHaveBeenCalledWith(["workbuddy"], true);
+  });
+  it("keeps Codex unavailable even for its native protocol", () => {
+    const next = vi.fn();
+    render(
+      <AgentPicker
+        model={{ ...sample, protocol: "openai-responses" }}
+        onPreview={next}
+        busy={false}
+      />,
+    );
+    const codex = screen.getByRole("checkbox", { name: /Codex/ });
+    expect(codex).toBeDisabled();
+    expect(codex).not.toBeChecked();
+    expect(screen.getByText("暂不支持")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "预览变更" })).toBeDisabled();
+    expect(next).not.toHaveBeenCalled();
   });
   it("allows opting out and resets the default after reselecting WorkBuddy", async () => {
     const next = vi.fn();

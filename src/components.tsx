@@ -186,6 +186,13 @@ export function ModelForm({
   busy: boolean;
 }) {
   const [model, setModel] = useState(initial);
+  const generatedNamePrefix = useRef<string | null>(
+    initial.id &&
+      initial.modelId &&
+      initial.name.endsWith(` · ${initial.modelId}`)
+      ? initial.name.slice(0, -` · ${initial.modelId}`.length)
+      : null,
+  );
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState("");
   const [probe, setProbe] = useState<
@@ -265,6 +272,7 @@ export function ModelForm({
   }
   /** Update one typed field while keeping every other draft value intact. */
   function update<K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) {
+    if (key === "name") generatedNamePrefix.current = null;
     if (["protocol", "baseUrl", "apiKey"].includes(key)) {
       catalogVersion.current += 1;
       setCatalog([]);
@@ -280,13 +288,21 @@ export function ModelForm({
     requestVersion.current += 1;
     setProbe(null);
     setError("");
-    setModel((old) => ({
-      ...old,
-      [key]: value,
-      ...(["protocol", "baseUrl", "apiKey"].includes(key)
-        ? { modelId: "" }
-        : {}),
-    }));
+    setModel((old) => {
+      const next = {
+        ...old,
+        [key]: value,
+        ...(["protocol", "baseUrl", "apiKey"].includes(key)
+          ? { modelId: "" }
+          : {}),
+      };
+      if (key === "modelId" && generatedNamePrefix.current !== null) {
+        next.name = value
+          ? `${generatedNamePrefix.current} · ${String(value)}`
+          : generatedNamePrefix.current;
+      }
+      return next;
+    });
   }
   /** Validate essential draft fields before any network request or save. */
   function validDraft(): boolean {
@@ -372,11 +388,18 @@ export function ModelForm({
             value={model.protocol}
             onChange={(e) => update("protocol", e.target.value as Protocol)}
           >
-            {Object.entries(protocolLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
+            {model.protocol === "openai-responses" && (
+              <option value="openai-responses" disabled>
+                OpenAI Responses（暂不支持）
               </option>
-            ))}
+            )}
+            {Object.entries(protocolLabels)
+              .filter(([value]) => value !== "openai-responses")
+              .map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
           </select>
         </label>
       </div>
@@ -523,7 +546,7 @@ export function ModelForm({
               placeholder="例如 128000"
             />
             <span className="field-hint">
-              应用到 Codex 时必填，请按实际模型能力填写。
+              当前仅支持 WorkBuddy 和 Claude Code。
             </span>
           </label>
           <fieldset className="effort-options">
@@ -619,8 +642,9 @@ export function AgentPicker({
   onPreview: (agents: AgentKind[], selectWorkbuddyModel: boolean) => void;
   busy: boolean;
 }) {
+  const native = nativeAgent[model.protocol];
   const [selected, setSelected] = useState<AgentKind[]>([
-    nativeAgent[model.protocol],
+    ...(native === "codex" ? [] : [native]),
   ]);
   const [selectWorkbuddyModel, setSelectWorkbuddyModel] = useState(true);
   return (
@@ -634,17 +658,20 @@ export function AgentPicker({
       </div>
       <div className="agent-options">
         {(Object.keys(agentLabels) as AgentKind[]).map((agent) => {
-          const compatible = nativeAgent[model.protocol] === agent;
+          const unavailable = agent === "codex";
+          const compatible = !unavailable && native === agent;
           return (
             <div key={agent}>
               <label
                 className={`agent-option ${!compatible ? "disabled" : ""}`}
+                aria-disabled={unavailable || undefined}
               >
                 <input
                   type="checkbox"
-                  checked={selected.includes(agent)}
+                  checked={!unavailable && selected.includes(agent)}
                   disabled={!compatible || busy}
                   onChange={(e) => {
+                    if (unavailable) return;
                     setSelected(
                       e.target.checked
                         ? [...selected, agent]
@@ -660,10 +687,10 @@ export function AgentPicker({
                     {compatible
                       ? agent === "workbuddy"
                         ? "加入模型列表，可在新任务中选择"
-                        : agent === "codex"
-                          ? "CLI 与桌面端共享配置"
-                          : "写入用户级模型配置"
-                      : "与当前模型协议不兼容"}
+                        : "写入用户级模型配置"
+                      : unavailable
+                        ? "暂不支持"
+                        : "与当前模型协议不兼容"}
                   </small>
                 </span>
                 {compatible && <span className="tag green">兼容</span>}
@@ -701,7 +728,7 @@ export function AgentPicker({
           disabled={busy || !selected.length}
           onClick={() =>
             onPreview(
-              selected,
+              selected.filter((agent) => agent !== "codex"),
               selected.includes("workbuddy") && selectWorkbuddyModel,
             )
           }
