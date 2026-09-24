@@ -79,7 +79,7 @@ async function main() {
         id: 1,
         method: "initialize",
         params: {
-          clientInfo: { name: "power_switch_acceptance", version: "0.1.2" },
+          clientInfo: { name: "power_switch_acceptance", version: "0.1.3" },
           capabilities: { experimentalApi: true },
         },
       });

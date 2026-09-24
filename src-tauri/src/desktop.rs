@@ -96,6 +96,11 @@ fn preview_restore(state: Shared<'_>, id: String) -> AppResult<ApplyPreview> {
 fn delete_backup(state: Shared<'_>, id: String) -> AppResult<()> {
     with_engine(state, |e| e.delete_backup(&id))
 }
+/// Remove all confirmed backup records without changing model or Agent configuration files.
+#[tauri::command]
+fn delete_all_backups(state: Shared<'_>) -> AppResult<usize> {
+    with_engine(state, |e| e.delete_all_backups())
+}
 /// Decode an incoming model link without applying it.
 #[tauri::command]
 fn preview_import(state: Shared<'_>, link: String) -> AppResult<ImportPreview> {
@@ -156,6 +161,7 @@ pub fn run() {
             cancel_preview,
             preview_restore,
             delete_backup,
+            delete_all_backups,
             preview_import,
             confirm_import,
             share_model,
