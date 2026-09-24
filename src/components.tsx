@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "./api";
+import claudeAgentIcon from "./assets/agents/claude.png";
+import workbuddyAgentIcon from "./assets/agents/workbuddy.png";
 import {
   ChevronDown,
   Eye,
@@ -97,12 +99,24 @@ export function ProtocolMark({
   small?: boolean;
 }) {
   const initial = Array.from(name.trim())[0] || "?";
+  const agentIcon =
+    protocol === "openai-chat"
+      ? workbuddyAgentIcon
+      : protocol === "anthropic-messages"
+        ? claudeAgentIcon
+        : null;
   return (
     <span
-      className={`protocol-mark ${protocol} ${small ? "small" : ""}`}
+      className={`protocol-mark ${protocol} ${small ? "small" : ""} ${agentIcon ? "brand-icon" : ""}`}
       aria-hidden="true"
     >
-      {/^[a-z]$/.test(initial) ? initial.toUpperCase() : initial}
+      {agentIcon ? (
+        <img src={agentIcon} alt="" draggable={false} />
+      ) : /^[a-z]$/.test(initial) ? (
+        initial.toUpperCase()
+      ) : (
+        initial
+      )}
     </span>
   );
 }

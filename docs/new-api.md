@@ -69,4 +69,4 @@ OAuth 的原生窗口需要在 macOS 上完成一次真实钉钉授权验收：�
 
 ## 当前支持范围
 
-v0.1.3 支持 WorkBuddy 和 Claude Code。Codex 客户端与 OpenAI Responses 协议入口已禁用；配置页面中的 Codex 设置不可编辑。
+v0.1.4 支持 WorkBuddy 和 Claude Code。Codex 客户端与 OpenAI Responses 协议入口已禁用；配置页面中的 Codex 设置不可编辑。

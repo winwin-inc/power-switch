@@ -348,7 +348,7 @@ export default function App() {
           </div>
           <div className="version">
             <span className="status-dot" />
-            power-switch <span>v0.1.3</span>
+            power-switch <span>v0.1.4</span>
           </div>
         </div>
       </aside>
