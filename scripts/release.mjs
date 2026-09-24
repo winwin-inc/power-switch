@@ -43,6 +43,14 @@ export function expectedSignatures(tag) {
   );
 }
 
+/** Select only the platform bundle that the updater actually installs. */
+export function updaterArtifactExtension(platform) {
+  if (!targets[platform])
+    throw new Error(`Unknown release platform: ${platform}`);
+  if (platform === "macos-universal") return "tar.gz";
+  return platform.startsWith("windows") ? "msi" : "AppImage";
+}
+
 /** 校验 v 前缀 SemVer，拒绝数字标识符前导零及不安全的文件名字符。 */
 export function versionFromTag(tag) {
   const match =
@@ -249,7 +257,11 @@ export async function collectAssets(root, directory, tag, platform) {
     if (!stat.isFile() || stat.size === 0)
       throw new Error(`Empty bundle: ${output}`);
   }
-  const signatureSource = await bundleFile(join(base, "bundle"), "sig");
+  const updaterBundle = await bundleFile(
+    join(base, "bundle"),
+    updaterArtifactExtension(platform),
+  );
+  const signatureSource = `${updaterBundle}.sig`;
   await copyFile(
     signatureSource,
     join(directory, `power-switch-${tag}-${platform}.sig`),

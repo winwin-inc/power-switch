@@ -15,6 +15,7 @@ import {
   expectedAssets,
   expectedSignatures,
   packageVersion,
+  updaterArtifactExtension,
   validateAssets,
   versionFromTag,
   writeChecksums,
@@ -122,6 +123,18 @@ test("expects all install and updater bundles for five targets", () => {
   assert.equal(expectedAssets("v0.1.0", "macos-universal").length, 3);
   assert.equal(expectedAssets("v0.1.0", "linux-arm64").length, 3);
   assert.throws(() => expectedAssets("v0.1.0", "unknown"));
+});
+
+test("selects the updater-supported bundle and its matching signature per platform", () => {
+  assert.equal(updaterArtifactExtension("macos-universal"), "tar.gz");
+  assert.equal(updaterArtifactExtension("windows-x64"), "msi");
+  assert.equal(updaterArtifactExtension("windows-arm64"), "msi");
+  assert.equal(updaterArtifactExtension("linux-x64"), "AppImage");
+  assert.equal(updaterArtifactExtension("linux-arm64"), "AppImage");
+  assert.throws(
+    () => updaterArtifactExtension("unknown"),
+    /Unknown release platform/,
+  );
 });
 
 test("generates a signed updater manifest for all supported OS architectures", async (t) => {
