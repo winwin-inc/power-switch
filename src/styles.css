@@ -266,30 +266,62 @@ nav {
   color: var(--muted);
   padding: 0 4px;
 }
-.version .version-number {
+.version-meta {
   margin-left: auto;
-  font-size: 9px;
-}
-.update-control {
-  width: 100%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 4px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  text-align: left;
+  gap: 5px;
+}
+.version-number {
   font-size: 9px;
 }
-.update-control.highlight {
-  color: var(--blue);
-  font-weight: 600;
+.version-update-trigger {
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--green) 32%, transparent);
+  border-radius: 5px;
+  background: var(--green-soft);
+  color: var(--green);
 }
-.update-control:disabled {
-  cursor: progress;
-  opacity: 0.75;
+.version-update-trigger:hover {
+  background: color-mix(in srgb, var(--green) 16%, var(--green-soft));
+}
+.version-update-status,
+.version-update-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--muted);
+}
+.version-update-progress {
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.version-update-retry {
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+}
+.version-update-retry:hover {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+.update-confirm-modal {
+  width: min(390px, calc(100vw - 40px));
+  padding: 21px;
+}
+.update-confirm-modal .modal-heading {
+  margin-bottom: 18px;
+}
+.update-confirm-modal .modal-footer {
+  margin-top: 0;
 }
 .status-dot {
   width: 5px;

@@ -27,6 +27,7 @@ import {
   Moon,
   Pencil,
   Plus,
+  RotateCw,
   Search,
   Settings2,
   ShieldCheck,
@@ -85,6 +86,7 @@ type ModalState =
   | { kind: "delete"; model: ModelConfig }
   | { kind: "delete-backup"; backup: BackupRecord }
   | { kind: "delete-all-backups" }
+  | { kind: "update-confirm"; version: string }
   | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
 type UpdateState =
@@ -253,6 +255,39 @@ export default function App() {
       setBusy(false);
     }
   }
+  /** Start installing only after the user confirms the available release. */
+  function beginUpdateInstall() {
+    if (updateState.kind !== "available") return;
+    setModal(null);
+    setUpdateState({ kind: "installing", percentage: 0 });
+    void installPendingUpdate((percentage) =>
+      setUpdateState({ kind: "installing", percentage }),
+    )
+      .then(() => setUpdateState({ kind: "ready" }))
+      .catch((error) =>
+        setUpdateState({ kind: "error", message: String(error) }),
+      );
+  }
+  /** Retry the automatic update check from its compact version-row error icon. */
+  function retryUpdateCheck() {
+    if (updateRequest.current) return;
+    updateRequest.current = true;
+    setUpdateState({ kind: "checking" });
+    void checkForUpdate()
+      .then((update) =>
+        setUpdateState(
+          update
+            ? { kind: "available", version: update.version }
+            : { kind: "idle" },
+        ),
+      )
+      .catch((error) =>
+        setUpdateState({ kind: "error", message: String(error) }),
+      )
+      .finally(() => {
+        updateRequest.current = false;
+      });
+  }
   /** Discard staged native contents when the user cancels either kind of preview. */
   function closeModal() {
     if (busy) return;
@@ -393,85 +428,79 @@ export default function App() {
           <div className="version">
             <span className="status-dot" />
             <span>power-switch</span>
-            <span className="version-number">v{packageJson.version}</span>
-          </div>
-          {isDesktop && (
-            <button
-              className={`update-control ${updateState.kind === "available" || updateState.kind === "ready" ? "highlight" : ""}`}
-              type="button"
-              disabled={
-                updateState.kind === "checking" ||
-                updateState.kind === "installing"
-              }
-              onClick={() => {
-                if (updateState.kind === "ready") {
-                  void restartUpdatedApp().catch((error) =>
-                    setUpdateState({ kind: "error", message: String(error) }),
-                  );
-                  return;
-                }
-                if (updateState.kind === "available") {
-                  setUpdateState({ kind: "installing", percentage: 0 });
-                  void installPendingUpdate((percentage) =>
-                    setUpdateState({ kind: "installing", percentage }),
-                  )
-                    .then(() => setUpdateState({ kind: "ready" }))
-                    .catch((error) =>
-                      setUpdateState({ kind: "error", message: String(error) }),
-                    );
-                  return;
-                }
-                if (updateRequest.current) return;
-                updateRequest.current = true;
-                setUpdateState({ kind: "checking" });
-                void checkForUpdate()
-                  .then((update) =>
-                    setUpdateState(
-                      update
-                        ? { kind: "available", version: update.version }
-                        : { kind: "idle" },
-                    ),
-                  )
-                  .catch((error) =>
-                    setUpdateState({ kind: "error", message: String(error) }),
-                  )
-                  .finally(() => {
-                    updateRequest.current = false;
-                  });
-              }}
-              title="检查并安装 power-switch 更新"
-            >
-              {updateState.kind === "checking" ? (
-                <>
-                  <LoaderCircle size={12} className="spin" /> 正在检查更新
-                </>
-              ) : updateState.kind === "available" ? (
-                <>
-                  <Download size={12} /> 发现新版本 v{updateState.version} ·
-                  点击更新
-                </>
-              ) : updateState.kind === "installing" ? (
-                <>
-                  <LoaderCircle size={12} className="spin" /> 正在更新
-                  {updateState.percentage === null
-                    ? "…"
-                    : ` ${updateState.percentage}%`}
-                </>
-              ) : updateState.kind === "ready" ? (
-                <>
-                  <CheckCircle2 size={12} /> 更新完成 · 重启应用
-                </>
-              ) : updateState.kind === "error" ? (
-                <>
-                  <Download size={12} /> {updateState.message}
-                </>
-              ) : (
-                <>
-                  <Download size={12} /> 检查更新
-                </>
+            <span className="version-meta">
+              <span className="version-number">v{packageJson.version}</span>
+              {isDesktop && updateState.kind === "available" && (
+                <button
+                  className="version-update-trigger"
+                  type="button"
+                  aria-label={`发现新版本 v${updateState.version}，查看更新`}
+                  title={`可以升级到 v${updateState.version}`}
+                  onClick={() =>
+                    setModal({
+                      kind: "update-confirm",
+                      version: updateState.version,
+                    })
+                  }
+                >
+                  <Download size={12} aria-hidden="true" />
+                </button>
               )}
-            </button>
-          )}
+              {isDesktop && updateState.kind === "checking" && (
+                <span
+                  className="version-update-status"
+                  role="status"
+                  aria-label="正在检查更新"
+                >
+                  <LoaderCircle size={13} className="spin" />
+                </span>
+              )}
+              {isDesktop && updateState.kind === "installing" && (
+                <span
+                  className="version-update-status"
+                  role="status"
+                  aria-label={
+                    updateState.percentage === null
+                      ? "正在下载更新"
+                      : `正在下载更新 ${updateState.percentage}%`
+                  }
+                >
+                  <LoaderCircle size={13} className="spin" />
+                  {updateState.percentage !== null && (
+                    <span className="version-update-progress">
+                      {updateState.percentage}%
+                    </span>
+                  )}
+                </span>
+              )}
+              {isDesktop && updateState.kind === "ready" && (
+                <button
+                  className="version-update-trigger"
+                  type="button"
+                  aria-label="更新完成，重启应用"
+                  title="更新完成，点击重启应用"
+                  onClick={() =>
+                    void restartUpdatedApp().catch((error) =>
+                      setUpdateState({ kind: "error", message: String(error) }),
+                    )
+                  }
+                >
+                  <RotateCw size={12} aria-hidden="true" />
+                </button>
+              )}
+              {isDesktop && updateState.kind === "error" && (
+                <button
+                  className="version-update-retry"
+                  type="button"
+                  aria-label="更新检查失败，点击重试"
+                  title={updateState.message}
+                  onClick={retryUpdateCheck}
+                >
+                  <RotateCw size={12} aria-hidden="true" />
+                </button>
+              )}
+            </span>
+          </div>
         </div>
       </aside>
       <main className="main">
@@ -1007,6 +1036,23 @@ export default function App() {
       )}
       {modal?.kind === "new-api" && (
         <NewApiDialog onClose={closeModal} onAdded={refresh} />
+      )}
+      {modal?.kind === "update-confirm" && updateState.kind === "available" && (
+        <Modal
+          title="版本更新"
+          description={`当前版本 v${packageJson.version}，可以升级为 v${modal.version}`}
+          onClose={closeModal}
+          className="update-confirm-modal"
+        >
+          <div className="modal-footer">
+            <button className="button secondary" onClick={closeModal}>
+              暂不更新
+            </button>
+            <button className="button primary" onClick={beginUpdateInstall}>
+              确认更新
+            </button>
+          </div>
+        </Modal>
       )}
       {modal?.kind === "model" && (
         <Modal
