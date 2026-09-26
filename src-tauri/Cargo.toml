@@ -1,6 +1,6 @@
 [package]
 name = "power-switch"
-version = "0.1.5"
+version = "0.1.6-rc.1"
 description = "Local model configuration switcher for coding agents"
 edition = "2021"
 rust-version = "1.92"
