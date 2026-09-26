@@ -9,13 +9,6 @@
     "beforeBuildCommand": "pnpm build:web",
     "frontendDist": "../dist"
   },
-  "bundle": {
-    "windows": {
-      "wix": {
-        "version": "0.1.6.1"
-      }
-    }
-  },
   "app": {
     "windows": [
       {
@@ -35,6 +28,11 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
+    "windows": {
+      "wix": {
+        "version": "0.1.6.1"
+      }
+    },
     "shortDescription": "模型随心切换",
     "category": "DeveloperTool",
     "icon": [
