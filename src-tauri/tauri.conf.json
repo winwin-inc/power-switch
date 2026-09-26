@@ -9,6 +9,13 @@
     "beforeBuildCommand": "pnpm build:web",
     "frontendDist": "../dist"
   },
+  "bundle": {
+    "windows": {
+      "wix": {
+        "version": "0.1.6.1"
+      }
+    }
+  },
   "app": {
     "windows": [
       {
