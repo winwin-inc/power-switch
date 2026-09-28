@@ -116,6 +116,16 @@ describe("sidebar app updates", () => {
     expect(screen.queryByText("检查更新")).not.toBeInTheDocument();
   });
 
+  it("places software updates after local data in Settings", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+
+    const sectionTitles = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((heading) => heading.textContent);
+    expect(sectionTitles.slice(-2)).toEqual(["本地数据", "软件更新"]);
+  });
+
   it("skips startup checks when automatic updates are off but permits a manual check", async () => {
     apiData.mockResolvedValue({
       ...structuredClone(sampleData),

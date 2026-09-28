@@ -1616,6 +1616,88 @@ function SettingsPage({
         </div>
       </section>
       <section className="settings-section">
+        <div className="section-title">
+          <FolderCog size={19} />
+          <div>
+            <h2>Agent 配置位置</h2>
+            <p>自动识别当前用户目录，也可选择本地文件或目录，保存后生效。</p>
+          </div>
+        </div>
+        {data.agents.map((agent) => {
+          const key =
+            agent.agent === "workbuddy"
+              ? "workbuddyPath"
+              : agent.agent === "claude"
+                ? "claudePath"
+                : "codexDir";
+          return (
+            <div className="field path-field" key={agent.agent}>
+              <span>
+                {agentLabels[agent.agent]}{" "}
+                {agent.agent === "codex" ? "配置目录" : "配置文件"}
+                <span className={`tag ${agent.exists ? "green" : ""}`}>
+                  {agent.exists ? "已找到配置" : "尚未创建"}
+                </span>
+              </span>
+              <div className="path-picker-row">
+                <input
+                  aria-label={`${agentLabels[agent.agent]} 配置路径`}
+                  value={settings[key] ?? ""}
+                  placeholder="自动识别（推荐）"
+                  disabled={busy || picking}
+                  onChange={(e) =>
+                    setSettings({ ...settings, [key]: e.target.value || null })
+                  }
+                  spellCheck={false}
+                />
+                {agent.agent !== "codex" && (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    disabled={busy || picking}
+                    onClick={() =>
+                      void choosePath(key, "file", agentLabels[agent.agent])
+                    }
+                    aria-label={`选择 ${agentLabels[agent.agent]} 配置文件`}
+                  >
+                    <FolderOpen size={15} />
+                    选择文件
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={busy || picking}
+                  onClick={() =>
+                    void choosePath(key, "directory", agentLabels[agent.agent])
+                  }
+                  aria-label={`选择 ${agentLabels[agent.agent]} 配置目录`}
+                >
+                  <FolderOpen size={15} />
+                  选择目录
+                </button>
+              </div>
+              <span className="resolved-path">当前路径：{agent.path}</span>
+            </div>
+          );
+        })}
+      </section>
+      {pickerError && (
+        <p role="alert" className="inline-error">
+          {pickerError}
+        </p>
+      )}
+      <section className="settings-section storage-section">
+        <div className="section-title">
+          <ShieldCheck size={19} />
+          <div>
+            <h2>本地数据</h2>
+            <p>模型与 API Key 保存在本机 JSON 文件中，备份包含原始配置。</p>
+          </div>
+        </div>
+        <code>{data.dataDir}</code>
+      </section>
+      <section className="settings-section">
         <div className="section-title update-section-title">
           <RotateCw size={19} />
           <div>
@@ -1706,88 +1788,6 @@ function SettingsPage({
             {updateState.message}
           </p>
         )}
-      </section>
-      <section className="settings-section">
-        <div className="section-title">
-          <FolderCog size={19} />
-          <div>
-            <h2>Agent 配置位置</h2>
-            <p>自动识别当前用户目录，也可选择本地文件或目录，保存后生效。</p>
-          </div>
-        </div>
-        {data.agents.map((agent) => {
-          const key =
-            agent.agent === "workbuddy"
-              ? "workbuddyPath"
-              : agent.agent === "claude"
-                ? "claudePath"
-                : "codexDir";
-          return (
-            <div className="field path-field" key={agent.agent}>
-              <span>
-                {agentLabels[agent.agent]}{" "}
-                {agent.agent === "codex" ? "配置目录" : "配置文件"}
-                <span className={`tag ${agent.exists ? "green" : ""}`}>
-                  {agent.exists ? "已找到配置" : "尚未创建"}
-                </span>
-              </span>
-              <div className="path-picker-row">
-                <input
-                  aria-label={`${agentLabels[agent.agent]} 配置路径`}
-                  value={settings[key] ?? ""}
-                  placeholder="自动识别（推荐）"
-                  disabled={busy || picking}
-                  onChange={(e) =>
-                    setSettings({ ...settings, [key]: e.target.value || null })
-                  }
-                  spellCheck={false}
-                />
-                {agent.agent !== "codex" && (
-                  <button
-                    type="button"
-                    className="button secondary"
-                    disabled={busy || picking}
-                    onClick={() =>
-                      void choosePath(key, "file", agentLabels[agent.agent])
-                    }
-                    aria-label={`选择 ${agentLabels[agent.agent]} 配置文件`}
-                  >
-                    <FolderOpen size={15} />
-                    选择文件
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="button secondary"
-                  disabled={busy || picking}
-                  onClick={() =>
-                    void choosePath(key, "directory", agentLabels[agent.agent])
-                  }
-                  aria-label={`选择 ${agentLabels[agent.agent]} 配置目录`}
-                >
-                  <FolderOpen size={15} />
-                  选择目录
-                </button>
-              </div>
-              <span className="resolved-path">当前路径：{agent.path}</span>
-            </div>
-          );
-        })}
-      </section>
-      {pickerError && (
-        <p role="alert" className="inline-error">
-          {pickerError}
-        </p>
-      )}
-      <section className="settings-section storage-section">
-        <div className="section-title">
-          <ShieldCheck size={19} />
-          <div>
-            <h2>本地数据</h2>
-            <p>模型与 API Key 保存在本机 JSON 文件中，备份包含原始配置。</p>
-          </div>
-        </div>
-        <code>{data.dataDir}</code>
       </section>
       <div className="settings-actions">
         <span>
