@@ -78,7 +78,7 @@ type Page = "models" | "backups" | "settings" | "skills";
 type ModalState =
   | { kind: "guide" }
   | { kind: "new-api" }
-  | { kind: "model"; model: ModelConfig }
+  | { kind: "model"; model: ModelConfig; copy?: boolean }
   | { kind: "agents"; model: ModelConfig }
   | { kind: "review"; preview: ApplyPreview }
   | { kind: "import" }
@@ -771,6 +771,7 @@ export default function App() {
                                   onClick={() =>
                                     setModal({
                                       kind: "model",
+                                      copy: true,
                                       model: {
                                         ...structuredClone(model),
                                         id: "",
@@ -1067,13 +1068,16 @@ export default function App() {
       )}
       {modal?.kind === "model" && (
         <Modal
-          title={modal.model.id ? "编辑模型" : "添加模型"}
+          title={
+            modal.copy ? "复制模型" : modal.model.id ? "编辑模型" : "添加模型"
+          }
           description="把服务商的连接信息保存在你的本地模型库。"
           onClose={closeModal}
           busy={busy}
         >
           <ModelForm
             initial={modal.model}
+            copy={modal.copy}
             busy={busy}
             onCancel={closeModal}
             onSave={(model, result) =>

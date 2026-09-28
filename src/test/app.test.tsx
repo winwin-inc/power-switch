@@ -367,8 +367,11 @@ describe("model test gating and indicators", () => {
     expect(api.apply).not.toHaveBeenCalled();
   });
 
-  it("retains a successful form test on the saved card, while copies start untested", async () => {
-    vi.mocked(api.save).mockResolvedValue(sample);
+  it("retains a saved test while a copied model loads its catalog and needs its own test", async () => {
+    const copy = { ...sample, id: "", name: "我的模型 · 副本" };
+    vi.mocked(api.save)
+      .mockResolvedValueOnce(sample)
+      .mockResolvedValueOnce({ ...copy, id: "2" });
     render(<App />);
     await screen.findByText("我的模型");
     await userEvent.click(
@@ -385,6 +388,15 @@ describe("model test gating and indicators", () => {
     );
     expect(screen.getByRole("button", { name: "保存模型" })).toBeDisabled();
     expect(api.testModel).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole("option", { name: "test-model" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "测试模型" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "测试模型" }));
+    expect(api.testModel).toHaveBeenLastCalledWith(copy);
+    expect(screen.getByRole("button", { name: "保存模型" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "保存模型" }));
+    expect(api.save).toHaveBeenLastCalledWith(copy, "verified-test-ticket");
   });
 
   it("ignores an earlier card request after saving and beginning a newer test", async () => {
