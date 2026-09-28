@@ -187,14 +187,16 @@ function validCatalogUrl(raw: string): boolean {
   }
 }
 
-/** Edit model fields locally; nothing is persisted until the validated form is submitted. */
+/** Edit or copy model fields locally; persist only after the exact draft passes a test. */
 export function ModelForm({
   initial,
+  copy = false,
   onSave,
   onCancel,
   busy,
 }: {
   initial: ModelConfig;
+  copy?: boolean;
   onSave: (m: ModelConfig, result: ModelTestResult) => void;
   onCancel: () => void;
   busy: boolean;
@@ -214,13 +216,14 @@ export function ModelForm({
   >(null);
   const [testing, setTesting] = useState(false);
   const editing = !!initial.id;
+  const namedModel = editing || copy;
   const [catalog, setCatalog] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const catalogVersion = useRef(0);
   const selectable =
     !!model.apiKey.trim() && !catalogLoading && catalog.includes(model.modelId);
-  const draft = editing
+  const draft = namedModel
     ? model
     : {
         ...model,
@@ -248,7 +251,7 @@ export function ModelForm({
     };
   }, []);
   useEffect(() => {
-    if (editing && initial.apiKey.trim()) void fetchModels(initial);
+    if (namedModel && initial.apiKey.trim()) void fetchModels(initial);
   }, []);
   /** Load the provider catalog and ignore results invalidated by connection edits or unmounting. */
   async function fetchModels(connection = model) {
@@ -330,7 +333,9 @@ export function ModelForm({
       return false;
     }
     if (!draft.name.trim() || !model.modelId.trim()) {
-      setError(editing ? "请填写名称和模型 ID" : "请填写平台名称并选择模型 ID");
+      setError(
+        namedModel ? "请填写名称和模型 ID" : "请填写平台名称并选择模型 ID",
+      );
       return false;
     }
     if (new TextEncoder().encode(draft.name).length > 256) {
@@ -386,13 +391,13 @@ export function ModelForm({
     <form ref={form} onSubmit={submit} className="model-form">
       <div className="form-grid">
         <label className="field">
-          {editing ? "名称" : "平台名称"}
+          {namedModel ? "名称" : "平台名称"}
           <input
             autoFocus
             value={model.name}
             maxLength={256}
             onChange={(e) => update("name", e.target.value)}
-            placeholder={editing ? "给模型起个好记的名字" : "例如 winwin"}
+            placeholder={namedModel ? "给模型起个好记的名字" : "例如 winwin"}
             required
           />
         </label>
