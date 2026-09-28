@@ -23,7 +23,12 @@ import {
   type NewApiImported,
   type NewApiStatus,
 } from "./new-api-api";
-import { agentLabels, type AgentKind, type Protocol } from "./types";
+import {
+  agentLabels,
+  defaultContextWindow,
+  type AgentKind,
+  type Protocol,
+} from "./types";
 import "./new-api.css";
 
 const agentProtocol: Record<AgentKind, Protocol> = {
@@ -57,7 +62,7 @@ export function NewApiDialog({
   const [agent, setAgent] = useState<AgentKind>("workbuddy");
   const [modelId, setModelId] = useState("");
   const [platformName, setPlatformName] = useState("winwin");
-  const [context, setContext] = useState("");
+  const [context, setContext] = useState(String(defaultContextWindow));
   const [tools, setTools] = useState(true);
   const [images, setImages] = useState(true);
   const [reasoning, setReasoning] = useState<string[]>([]);
@@ -170,7 +175,7 @@ export function NewApiDialog({
       );
   }, [catalog, protocol, modelId]);
   useEffect(() => {
-    setContext("");
+    setContext(String(defaultContextWindow));
     setReasoning([]);
     setReplaceInvalid(false);
     setRestartUncertain(false);
@@ -456,12 +461,8 @@ export function NewApiDialog({
                   }}
                 >
                   {Object.entries(agentLabels).map(([value, label]) => (
-                    <option
-                      key={value}
-                      value={value}
-                      disabled={value === "codex"}
-                    >
-                      {value === "codex" ? `${label}（暂不支持）` : label}
+                    <option key={value} value={value}>
+                      {label}
                     </option>
                   ))}
                 </select>
@@ -497,7 +498,9 @@ export function NewApiDialog({
                   ))}
                 </select>
                 <span className="field-hint">
-                  仅显示 default 分组中支持当前客户端的模型。
+                  {agent === "codex"
+                    ? "显示 default 分组中的 OpenAI 模型；保存前会调用 Responses 接口验证。"
+                    : "仅显示 default 分组中支持当前客户端的模型。"}
                 </span>
               </label>
             </div>
@@ -505,7 +508,7 @@ export function NewApiDialog({
               <span className="new-api-step-number">03</span>
               <div>
                 <strong>创建专属密钥</strong>
-                <p>保存后进入模型库，再选择应用到 Agent。</p>
+                <p>创建密钥后先测试模型，通过后保存到模型库。</p>
               </div>
             </div>
             <div className="new-api-policy">
@@ -617,7 +620,9 @@ export function NewApiDialog({
               </label>
             )}
             <div className="modal-footer">
-              <span className="field-hint">保存后，可预览并应用到 Agent。</span>
+              <span className="field-hint">
+                测试通过后保存，再预览并应用到 Agent。
+              </span>
               <button
                 className="button primary"
                 disabled={Boolean(busy) || !modelId || !platformName.trim()}
@@ -689,10 +694,10 @@ export function NewApiDialog({
                 ) : (
                   <RefreshCw size={16} />
                 )}
-                测试连接
+                再次测试
               </button>
               <span className="field-hint">
-                会发送一次最小模型请求，消耗少量账户额度。
+                入库前已测试通过；再次测试会消耗少量账户额度。
               </span>
             </div>
             {testMessage && (

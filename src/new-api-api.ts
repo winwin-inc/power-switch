@@ -76,7 +76,7 @@ async function call<T>(
 }
 
 export const newApi = {
-  /** Inspect the supported version and configured identity provider. */
+  /** Inspect the instance identity provider; the release label is diagnostic only. */
   check: (baseUrl: string) =>
     call<NewApiConnection>("new_api_check", { baseUrl }),
   /** Restore login or poll a pending native authorization. */

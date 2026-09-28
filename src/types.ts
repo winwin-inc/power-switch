@@ -16,6 +16,7 @@ export interface ModelConfig {
 export interface ModelTestResult {
   message: string;
   elapsedMs: number;
+  verificationToken?: string;
 }
 export interface ModelTestState {
   key: string;
@@ -101,6 +102,10 @@ export interface ImportPreview {
   token: string;
   rows: ImportRow[];
 }
+export interface ImportOutcome {
+  savedCount: number;
+  failures: { index: number; message: string }[];
+}
 export const protocolLabels: Record<Protocol, string> = {
   "openai-chat": "OpenAI Chat Completions",
   "openai-responses": "OpenAI Responses",
@@ -116,8 +121,9 @@ export const nativeAgent: Record<Protocol, AgentKind> = {
   "openai-responses": "codex",
   "anthropic-messages": "claude",
 };
+export const defaultContextWindow = 1_000_000;
 
-/** Return an independent draft with conservative optional model capabilities. */
+/** Return an independent model draft with the default context window. */
 export function newModel(): ModelConfig {
   return {
     id: "",
@@ -128,7 +134,7 @@ export function newModel(): ModelConfig {
     apiKey: "",
     supportsToolCall: true,
     supportsImages: true,
-    contextWindow: null,
+    contextWindow: defaultContextWindow,
     reasoningLevels: [],
   };
 }

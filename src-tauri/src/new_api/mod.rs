@@ -1,4 +1,4 @@
-//! Versioned New API connector: browser authorization, private sessions and recoverable token creation.
+//! Capability-driven New API connector with private sessions and recoverable token creation.
 mod http;
 #[cfg(test)]
 mod tests;
@@ -26,7 +26,6 @@ use uuid::Uuid;
 use vault::Vault;
 
 pub const DEFAULT_URL: &str = "https://new-api.banmahui.cn";
-pub const SUPPORTED_VERSION: &str = "v1.0.0-rc.21";
 pub const LOGIN_TIMEOUT: u64 = 600;
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -95,21 +94,65 @@ struct PendingLogin {
     state: String,
     callback: Url,
     client: ApiClient,
+    dialect: LoginDialect,
     started: u64,
     canceled: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Copy)]
+enum LoginDialect {
+    Cookie,
+    Bearer,
 }
 
 #[derive(Deserialize, Serialize)]
 struct SavedSession {
     base_url: String,
-    version: String,
+    user: User,
+    expires_at: u64,
+    auth: SavedAuth,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+enum SavedAuth {
+    Cookie {
+        cookie: String,
+    },
+    Bearer {
+        access_token: String,
+        access_expires_at: u64,
+        refresh_cookie: String,
+        session_id: String,
+    },
+}
+
+#[derive(Deserialize)]
+struct LegacySavedSession {
+    base_url: String,
     user: User,
     cookie: String,
     expires_at: u64,
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredSession {
+    Current(SavedSession),
+    Legacy(LegacySavedSession),
+}
+
+enum SessionAuth {
+    Cookie,
+    Bearer {
+        access_expires_at: u64,
+        session_id: String,
+    },
+}
+
 struct Session {
     client: ApiClient,
+    auth: SessionAuth,
     user: User,
     expires_at: u64,
     verified_at: u64,
@@ -227,7 +270,7 @@ impl NewApi {
         }
     }
 
-    /// Refuse untested auth dialects and discover the configured custom OAuth provider.
+    /// Discover the configured OAuth provider without treating a release label as a contract.
     pub async fn check(&self, raw: &str) -> Result<Connection> {
         let base = instance_url(raw)?;
         let api = ApiClient::new(&base)?;
@@ -235,13 +278,7 @@ impl NewApi {
             .api(api.management(Method::GET, "/api/status", None))
             .await?;
         let data = &response["data"];
-        let version = data["version"].as_str().unwrap_or_default();
-        if version != SUPPORTED_VERSION {
-            return Err(Error::new(
-                "unsupported_version",
-                format!("首版仅适配 {SUPPORTED_VERSION}；当前实例版本不兼容，请等待对应版本适配"),
-            ));
-        }
+        let version = data["version"].as_str().unwrap_or("未知版本");
         if let Some(server) = data["server_address"].as_str().filter(|s| !s.is_empty()) {
             if instance_url(server)? != base {
                 return Err(Error::new(
@@ -294,14 +331,35 @@ impl NewApi {
         }
         let connection = self.check(raw).await?;
         let client = ApiClient::new(&connection.base_url)?;
-        let response = client
-            .api(client.management(Method::GET, "/api/oauth/state", None))
-            .await?;
-        let state = response["data"]
-            .as_str()
-            .filter(|s| !s.is_empty() && s.len() <= 512)
-            .ok_or_else(|| Error::new("oauth", "服务端未返回有效的 OAuth state"))?
-            .to_string();
+        let modern = client
+            .api(
+                client
+                    .management(Method::POST, "/api/oauth/state", None)
+                    .json(&json!({"provider":connection.provider.slug,"intent":"login"})),
+            )
+            .await;
+        let (response, dialect) = match modern {
+            Ok(response) => (response, LoginDialect::Bearer),
+            Err(error) if matches!(error.code, "not_found" | "method_not_allowed") => (
+                client
+                    .api(client.management(Method::GET, "/api/oauth/state", None))
+                    .await?,
+                LoginDialect::Cookie,
+            ),
+            Err(error) => return Err(error),
+        };
+        let state = match dialect {
+            LoginDialect::Bearer => response["data"]["flow_token"].as_str(),
+            LoginDialect::Cookie => response["data"].as_str(),
+        }
+        .filter(|s| !s.is_empty() && s.len() <= 512)
+        .ok_or_else(|| {
+            Error::new(
+                "oauth_contract",
+                "实例未返回可识别的 OAuth state，登录已停止",
+            )
+        })?
+        .to_string();
         let callback = Url::parse(&format!(
             "{}/oauth/{}",
             connection.base_url, connection.provider.slug
@@ -340,6 +398,7 @@ impl NewApi {
             state,
             callback: callback.clone(),
             client,
+            dialect,
             started: now(),
             canceled: canceled.clone(),
         });
@@ -365,7 +424,7 @@ impl NewApi {
         result
     }
 
-    /// Persist only the verified New API session; the IdP secret and token stay on the server.
+    /// Exchange the OAuth code once and recognize the resulting dashboard auth contract.
     async fn exchange_login(&mut self, flow: PendingLogin, callback_url: &Url) -> Result<()> {
         if flow.canceled.load(Ordering::SeqCst) {
             return Err(Error::new("oauth_canceled", "登录已取消"));
@@ -375,6 +434,7 @@ impl NewApi {
         }
         let code = validate_callback(&flow.callback, &flow.state, callback_url)?;
         let provider = flow.callback.path().trim_start_matches("/oauth/");
+        let canceled = flow.canceled.clone();
         let result = flow
             .client
             .api(
@@ -383,19 +443,9 @@ impl NewApi {
                     .query(&[("code", code.as_str()), ("state", flow.state.as_str())]),
             )
             .await?;
-        let user: User = serde_json::from_value(result["data"].clone())
-            .map_err(|_| Error::new("oauth", "OAuth 未返回预期用户信息；实例认证契约可能已变化"))?;
-        if user.id <= 0 {
-            return Err(Error::new("oauth", "登录返回的用户 ID 无效"));
-        }
-        let mut session = Session {
-            client: flow.client,
-            user,
-            expires_at: now() + 30 * 86400,
-            verified_at: 0,
-        };
+        let mut session = session_from_oauth(flow.client, flow.dialect, &result["data"])?;
         verify(&mut session).await?;
-        if flow.canceled.load(Ordering::SeqCst) {
+        if canceled.load(Ordering::SeqCst) {
             return Err(Error::new("oauth_canceled", "登录已取消"));
         }
         self.persist_session(&session)?;
@@ -472,53 +522,111 @@ impl NewApi {
         }
     }
 
-    /// Reuse a session only for its canonical server and only after checking the supported server version.
+    /// Restore either credential dialect and recheck it against the actual server account.
     async fn ensure_session(&mut self, base: &str) -> Result<()> {
+        let mut restored = false;
         if self.session.as_ref().is_none_or(|s| s.client.base != base) {
             let raw = self.vault.get(base)?.ok_or_else(login_required)?;
-            let saved: SavedSession = serde_json::from_str(&raw)
+            let stored: StoredSession = serde_json::from_str(&raw)
                 .map_err(|_| Error::new("keychain", "保存的会话无法读取，请重新登录"))?;
-            if saved.base_url != base
-                || saved.version != SUPPORTED_VERSION
-                || saved.expires_at <= now()
-            {
+            let saved = match stored {
+                StoredSession::Current(saved) => saved,
+                StoredSession::Legacy(old) => SavedSession {
+                    base_url: old.base_url,
+                    user: old.user,
+                    expires_at: old.expires_at,
+                    auth: SavedAuth::Cookie { cookie: old.cookie },
+                },
+            };
+            if saved.base_url != base || saved.expires_at <= now() {
                 return Err(login_required());
             }
             self.check(base).await?;
-            let client = ApiClient::new(base)?;
-            client.restore_cookie(&saved.cookie)?;
+            let mut client = ApiClient::new(base)?;
+            let auth = match saved.auth {
+                SavedAuth::Cookie { cookie } => {
+                    client.restore_cookie(&cookie, "session", "/")?;
+                    SessionAuth::Cookie
+                }
+                SavedAuth::Bearer {
+                    access_token,
+                    access_expires_at,
+                    refresh_cookie,
+                    session_id,
+                } => {
+                    if access_token.is_empty() || session_id.is_empty() {
+                        return Err(login_required());
+                    }
+                    client.restore_cookie(&refresh_cookie, "new_api_refresh", "/api/user/auth")?;
+                    client.set_access_token(access_token);
+                    SessionAuth::Bearer {
+                        access_expires_at,
+                        session_id,
+                    }
+                }
+            };
             self.session = Some(Session {
                 client,
+                auth,
                 user: saved.user,
                 expires_at: saved.expires_at,
                 verified_at: 0,
             });
+            restored = true;
         }
-        let session = self.session.as_mut().unwrap();
-        if session.expires_at <= now() {
+        if self.session.as_ref().is_some_and(|s| s.expires_at <= now()) {
             self.session = None;
             return Err(login_required());
         }
-        if now().saturating_sub(session.verified_at) >= 60 {
-            if let Err(error) = verify(session).await {
+        let (refreshed, ready) = ready_session(self.session.as_mut().unwrap()).await;
+        // A refresh rotates the server cookie; commit it even if the follow-up identity check fails.
+        if refreshed {
+            self.persist_session(self.session.as_ref().unwrap())?;
+        }
+        match ready {
+            Ok(()) => {
+                if restored && !refreshed {
+                    self.persist_session(self.session.as_ref().unwrap())?;
+                }
+                Ok(())
+            }
+            Err(error) => {
                 if error.code == "login_required" {
                     self.session = None;
                     self.vault.remove(base)?;
                 }
-                return Err(error);
+                Err(error)
             }
         }
-        Ok(())
     }
 
     /// Save only into an OS secret store; no fallback plaintext file is permitted.
     fn persist_session(&self, session: &Session) -> Result<()> {
+        let auth = match &session.auth {
+            SessionAuth::Cookie => SavedAuth::Cookie {
+                cookie: session.client.session_cookie("session", "/")?,
+            },
+            SessionAuth::Bearer {
+                access_expires_at,
+                session_id,
+            } => SavedAuth::Bearer {
+                access_token: session
+                    .client
+                    .access_token()
+                    .ok_or_else(login_required)?
+                    .to_string(),
+                access_expires_at: *access_expires_at,
+                refresh_cookie: session
+                    .client
+                    .session_cookie("new_api_refresh", "/api/user/auth/refresh")?,
+                session_id: session_id.clone(),
+            },
+        };
         let saved = SavedSession {
             base_url: session.client.base.clone(),
-            version: SUPPORTED_VERSION.into(),
             user: session.user.clone(),
-            cookie: session.client.session_cookie()?,
             expires_at: session.expires_at,
+            auth,
         };
         let raw =
             serde_json::to_string(&saved).map_err(|_| Error::new("keychain", "会话序列化失败"))?;
@@ -553,7 +661,7 @@ impl NewApi {
         Ok(session.client.clone())
     }
 
-    /// Intersect allowed group models with explicitly advertised protocol metadata.
+    /// Intersect allowed group models with protocol metadata; OpenAI models may be probed for Responses.
     pub async fn catalog(
         &mut self,
         raw: &str,
@@ -623,14 +731,18 @@ impl NewApi {
                     .flatten()
                     .filter_map(Value::as_str)
                 {
-                    let protocol = match kind {
-                        "openai" => Protocol::OpenaiChat,
-                        "openai-response" => Protocol::OpenaiResponses,
-                        "anthropic" => Protocol::AnthropicMessages,
+                    // New API advertises `openai` even when its Responses relay is enabled.
+                    // Offer Codex as a candidate, then require a successful Responses probe before saving.
+                    let candidates: &[Protocol] = match kind {
+                        "openai" => &[Protocol::OpenaiChat, Protocol::OpenaiResponses],
+                        "openai-response" => &[Protocol::OpenaiResponses],
+                        "anthropic" => &[Protocol::AnthropicMessages],
                         _ => continue,
                     };
-                    if !protocols.contains(&protocol) {
-                        protocols.push(protocol);
+                    for &protocol in candidates {
+                        if !protocols.contains(&protocol) {
+                            protocols.push(protocol);
+                        }
                     }
                 }
             }
@@ -642,6 +754,12 @@ impl NewApi {
             }
         }
         models.sort_by(|a, b| a.model_id.cmp(&b.model_id));
+        if !names.is_empty() && models.is_empty() {
+            return Err(Error::new(
+                "protocol_metadata",
+                "可用模型缺少可识别的协议元数据；已停止自动导入，请检查 New API 模型接口",
+            ));
+        }
         Ok(Catalog {
             groups,
             selected_group: group,
@@ -846,7 +964,7 @@ impl NewApi {
             ))
             .await?;
         model.api_key = normalize_full_key(&key_response["data"]["key"])?;
-        check_key(&base, &model).await?;
+        model.api_key = check_key(&base, &model).await?;
         let binding = record
             .models
             .iter()
@@ -966,17 +1084,20 @@ impl NewApi {
     }
 }
 
-/// rc.21 returns the raw 48-character key; add the client prefix exactly once and reject masks.
+/// Treat returned keys as opaque credentials and reject only unusable or masked values.
 fn normalize_full_key(value: &Value) -> Result<String> {
     let raw = value.as_str().unwrap_or_default();
-    let key = raw.strip_prefix("sk-").unwrap_or(raw);
-    if key.len() != 48 || !key.bytes().all(|c| c.is_ascii_alphanumeric()) {
+    if raw.is_empty()
+        || raw.len() > 4096
+        || !raw.bytes().all(|byte| byte.is_ascii_graphic())
+        || raw.contains('*')
+    {
         return Err(Error::new(
             "key",
             "服务端未返回完整 API Key；请重试获取，已有密钥不会重复创建",
         ));
     }
-    Ok(format!("sk-{key}"))
+    Ok(raw.to_string())
 }
 
 /// Validate a configured HTTPS endpoint while retaining query parameters for IdP authorization URLs.
@@ -1050,6 +1171,188 @@ pub fn api_base(base: &str, protocol: Protocol) -> String {
     }
 }
 
+/// Parse only recognized OAuth results; a challenge must never be treated as a login.
+fn session_from_oauth(
+    mut client: ApiClient,
+    dialect: LoginDialect,
+    data: &Value,
+) -> Result<Session> {
+    let (user_value, auth, expires_at) = match dialect {
+        LoginDialect::Cookie => {
+            client.session_cookie("session", "/")?;
+            (data.clone(), SessionAuth::Cookie, now() + 30 * 86400)
+        }
+        LoginDialect::Bearer => {
+            let access = data["access_token"].as_str().ok_or_else(|| {
+                if data["require_verification"].as_bool() == Some(true)
+                    || (data["flow_token"].is_string() && data["methods"].is_array())
+                    || data.get("challenge").is_some()
+                    || data.get("verification_required").is_some()
+                    || data.get("verification_id").is_some()
+                {
+                    Error::new(
+                        "verification_required",
+                        "New API 要求站内二次验证；当前自动接入无法继续，请在 New API 完成验证后重试",
+                    )
+                } else {
+                    Error::new("oauth_contract", "OAuth 登录响应格式未知，已停止自动接入")
+                }
+            })?;
+            let access_expires_at = data["access_expires_at"].as_u64().unwrap_or_default();
+            let session_id = data["session"]["sid"].as_str().unwrap_or_default();
+            let server_expires_at = data["session"]["expires_at"].as_u64().unwrap_or_default();
+            if !data["token_type"]
+                .as_str()
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("bearer"))
+                || access.is_empty()
+                || access.len() > 8192
+                || access
+                    .bytes()
+                    .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+                || access_expires_at <= now()
+                || session_id.is_empty()
+                || server_expires_at <= now()
+            {
+                return Err(Error::new(
+                    "oauth_contract",
+                    "OAuth 凭证格式未知，已停止自动接入",
+                ));
+            }
+            client.session_cookie("new_api_refresh", "/api/user/auth/refresh")?;
+            client.set_access_token(access.to_string());
+            (
+                data["user"].clone(),
+                SessionAuth::Bearer {
+                    access_expires_at,
+                    session_id: session_id.to_string(),
+                },
+                server_expires_at.min(now() + 30 * 86400),
+            )
+        }
+    };
+    let user: User = serde_json::from_value(user_value).map_err(|_| {
+        Error::new(
+            "oauth_contract",
+            "OAuth 未返回可识别的用户信息，已停止自动接入",
+        )
+    })?;
+    if user.id <= 0 {
+        return Err(Error::new("oauth_contract", "OAuth 返回的用户 ID 无效"));
+    }
+    Ok(Session {
+        client,
+        auth,
+        user,
+        expires_at,
+        verified_at: 0,
+    })
+}
+
+/// Refresh an expiring bearer once, then verify the same user before returning it to the UI.
+async fn ready_session(session: &mut Session) -> (bool, Result<()>) {
+    let due = matches!(
+        session.auth,
+        SessionAuth::Bearer {
+            access_expires_at,
+            ..
+        } if access_expires_at <= now() + 60
+    );
+    let mut refreshed = false;
+    if due {
+        if let Err(error) = refresh_session(session).await {
+            return (false, Err(error));
+        }
+        refreshed = true;
+    }
+    if refreshed || now().saturating_sub(session.verified_at) >= 60 {
+        match verify(session).await {
+            Ok(()) => {}
+            Err(error)
+                if error.code == "login_required"
+                    && !refreshed
+                    && matches!(session.auth, SessionAuth::Bearer { .. }) =>
+            {
+                if let Err(error) = refresh_session(session).await {
+                    return (false, Err(error));
+                }
+                refreshed = true;
+                if let Err(error) = verify(session).await {
+                    return (true, Err(error));
+                }
+            }
+            Err(error) => return (refreshed, Err(error)),
+        }
+    }
+    (refreshed, Ok(()))
+}
+
+/// Rotate the refresh cookie through the same-origin endpoint and retain the old local cap.
+async fn refresh_session(session: &mut Session) -> Result<()> {
+    let sid = match &session.auth {
+        SessionAuth::Bearer { session_id, .. } => session_id.clone(),
+        SessionAuth::Cookie => return Err(login_required()),
+    };
+    let result = session
+        .client
+        .api(
+            session
+                .client
+                .client
+                .post(format!("{}/api/user/auth/refresh", session.client.base))
+                .header("Origin", &session.client.base)
+                .header("X-Auth-Session", &sid),
+        )
+        .await
+        .map_err(|error| {
+            if matches!(error.code, "api_rejected" | "login_required") {
+                login_required()
+            } else {
+                error
+            }
+        })?;
+    let data = &result["data"];
+    let token = data["access_token"].as_str().unwrap_or_default();
+    let access_expires_at = data["access_expires_at"].as_u64().unwrap_or_default();
+    let returned_sid = data["session"]["sid"].as_str().unwrap_or_default();
+    let server_expires_at = data["session"]["expires_at"].as_u64().unwrap_or_default();
+    let user: User = serde_json::from_value(data["user"].clone()).map_err(|_| {
+        Error::new(
+            "auth_contract",
+            "刷新会话的用户信息格式未知，已停止自动接入",
+        )
+    })?;
+    if !data["token_type"]
+        .as_str()
+        .is_some_and(|kind| kind.eq_ignore_ascii_case("bearer"))
+        || token.is_empty()
+        || token.len() > 8192
+        || token
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+        || access_expires_at <= now()
+        || returned_sid != sid
+        || server_expires_at <= now()
+        || user.id != session.user.id
+    {
+        return Err(Error::new(
+            "auth_contract",
+            "刷新会话的凭证格式未知，已停止自动接入",
+        ));
+    }
+    session
+        .client
+        .session_cookie("new_api_refresh", "/api/user/auth/refresh")?;
+    session.client.set_access_token(token.to_string());
+    session.auth = SessionAuth::Bearer {
+        access_expires_at,
+        session_id: sid,
+    };
+    session.expires_at = session.expires_at.min(server_expires_at);
+    session.user = user;
+    session.verified_at = 0;
+    Ok(())
+}
+
 /// Confirm identity against New API rather than trusting a cached username or UI-supplied user ID.
 async fn verify(session: &mut Session) -> Result<()> {
     let response = session
@@ -1106,35 +1409,48 @@ fn token_active(token: &Value) -> bool {
             || token["remain_quota"].as_i64().is_some_and(|q| q > 0))
 }
 
-/// Verify model-key authentication without sending a paid inference request.
-async fn check_key(base: &str, model: &ModelConfig) -> Result<()> {
-    let api = ApiClient::new(base)?;
-    let response = read_json(
-        api.client
-            .get(format!("{base}/v1/models"))
-            .bearer_auth(&model.api_key),
-    )
-    .await
-    .map_err(|e| {
-        if e.code == "login_required" {
-            Error::new(
-                "token_unusable",
-                "API Key 未通过鉴权；已有创建记录已保留，可重试或在 New API 检查",
-            )
-        } else {
-            e
+/// Verify the server's key as returned, trying the known prefix only on auth failure.
+async fn check_key(base: &str, model: &ModelConfig) -> Result<String> {
+    let raw = model.api_key.as_str();
+    match check_key_candidate(base, raw, &model.model_id).await {
+        Ok(()) => Ok(raw.to_string()),
+        Err(error) if error.code == "login_required" && !raw.starts_with("sk-") => {
+            let prefixed = format!("sk-{raw}");
+            check_key_candidate(base, &prefixed, &model.model_id)
+                .await
+                .map_err(token_auth_error)?;
+            Ok(prefixed)
         }
-    })?;
-    if !response["data"].as_array().is_some_and(|rows| {
-        rows.iter()
-            .any(|r| r["id"].as_str() == Some(&model.model_id))
-    }) {
+        Err(error) => Err(token_auth_error(error)),
+    }
+}
+
+/// Check one key candidate against the read-only model listing before local persistence.
+async fn check_key_candidate(base: &str, key: &str, model_id: &str) -> Result<()> {
+    let api = ApiClient::new(base)?;
+    let response = read_json(api.client.get(format!("{base}/v1/models")).bearer_auth(key)).await?;
+    let rows = response["data"]
+        .as_array()
+        .ok_or_else(|| Error::new("response", "模型密钥校验响应格式未知，已停止保存"))?;
+    if !rows.iter().any(|row| row["id"].as_str() == Some(model_id)) {
         return Err(Error::new(
             "group_access",
             "共享密钥的创建分组无法访问所选模型；请在 New API 调整该密钥的分组权限后重试，应用不会另建密钥",
         ));
     }
     Ok(())
+}
+
+/// Report key rejection without reflecting any remote response or credential.
+fn token_auth_error(error: Error) -> Error {
+    if error.code == "login_required" {
+        Error::new(
+            "token_unusable",
+            "API Key 未通过鉴权；已有创建记录已保留，可重试或在 New API 检查",
+        )
+    } else {
+        error
+    }
 }
 
 /// Send one explicitly requested, small inference and validate the native protocol response shape.

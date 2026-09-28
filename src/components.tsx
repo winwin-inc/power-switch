@@ -238,7 +238,7 @@ export function ModelForm({
     !testing &&
     probe?.status === "passed" &&
     probe.key === modelTestKey(draft) &&
-    !!probe.result;
+    !!probe.result?.verificationToken;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -402,18 +402,11 @@ export function ModelForm({
             value={model.protocol}
             onChange={(e) => update("protocol", e.target.value as Protocol)}
           >
-            {model.protocol === "openai-responses" && (
-              <option value="openai-responses" disabled>
-                OpenAI Responses（暂不支持）
+            {Object.entries(protocolLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
-            )}
-            {Object.entries(protocolLabels)
-              .filter(([value]) => value !== "openai-responses")
-              .map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
+            ))}
           </select>
         </label>
       </div>
@@ -550,6 +543,7 @@ export function ModelForm({
               min={1024}
               max={100000000}
               step={1}
+              required={model.protocol === "openai-responses"}
               value={model.contextWindow ?? ""}
               onChange={(e) =>
                 update(
@@ -560,7 +554,7 @@ export function ModelForm({
               placeholder="例如 128000"
             />
             <span className="field-hint">
-              当前仅支持 WorkBuddy 和 Claude Code。
+              应用到 Codex 时必须填写实际上下文窗口。
             </span>
           </label>
           <fieldset className="effort-options">
@@ -657,9 +651,7 @@ export function AgentPicker({
   busy: boolean;
 }) {
   const native = nativeAgent[model.protocol];
-  const [selected, setSelected] = useState<AgentKind[]>([
-    ...(native === "codex" ? [] : [native]),
-  ]);
+  const [selected, setSelected] = useState<AgentKind[]>([native]);
   const [selectWorkbuddyModel, setSelectWorkbuddyModel] = useState(true);
   return (
     <>
@@ -672,20 +664,17 @@ export function AgentPicker({
       </div>
       <div className="agent-options">
         {(Object.keys(agentLabels) as AgentKind[]).map((agent) => {
-          const unavailable = agent === "codex";
-          const compatible = !unavailable && native === agent;
+          const compatible = native === agent;
           return (
             <div key={agent}>
               <label
                 className={`agent-option ${!compatible ? "disabled" : ""}`}
-                aria-disabled={unavailable || undefined}
               >
                 <input
                   type="checkbox"
-                  checked={!unavailable && selected.includes(agent)}
+                  checked={selected.includes(agent)}
                   disabled={!compatible || busy}
                   onChange={(e) => {
-                    if (unavailable) return;
                     setSelected(
                       e.target.checked
                         ? [...selected, agent]
@@ -702,9 +691,7 @@ export function AgentPicker({
                       ? agent === "workbuddy"
                         ? "加入模型列表，可在新任务中选择"
                         : "写入用户级模型配置"
-                      : unavailable
-                        ? "暂不支持"
-                        : "与当前模型协议不兼容"}
+                      : "与当前模型协议不兼容"}
                   </small>
                 </span>
                 {compatible && <span className="tag green">兼容</span>}
@@ -742,7 +729,7 @@ export function AgentPicker({
           disabled={busy || !selected.length}
           onClick={() =>
             onPreview(
-              selected.filter((agent) => agent !== "codex"),
+              selected,
               selected.includes("workbuddy") && selectWorkbuddyModel,
             )
           }

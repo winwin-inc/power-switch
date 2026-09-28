@@ -83,6 +83,9 @@ impl ModelConfig {
             return Err("无效的模型内部 ID".into());
         }
         self.base_url = normalize_url(&self.base_url, self.protocol)?;
+        if self.protocol == Protocol::OpenaiResponses && self.context_window.is_none() {
+            return Err("Codex 模型必须填写实际上下文窗口".into());
+        }
         if let Some(window) = self.context_window {
             if !(1024..=100_000_000).contains(&window) {
                 return Err("上下文窗口应为 1024 至 100000000 的整数".into());

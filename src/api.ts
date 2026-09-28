@@ -5,6 +5,7 @@ import type {
   ApplyPreview,
   ApplyResult,
   ImportPreview,
+  ImportOutcome,
   ModelConfig,
   ModelTestResult,
   Settings,
@@ -29,8 +30,9 @@ export const api = {
   ) => call<string[]>("list_models", { connection }),
   /** Read the desktop library and current target-file locations. */
   data: () => call<AppData>("get_data"),
-  /** Persist a model without applying it to an Agent. */
-  save: (model: ModelConfig) => call<ModelConfig>("save_model", { model }),
+  /** Persist only the exact draft covered by a fresh successful test receipt. */
+  save: (model: ModelConfig, verificationToken: string) =>
+    call<ModelConfig>("save_model", { model, verificationToken }),
   /** Send the literal test prompt through the selected native model protocol without saving. */
   testModel: (model: ModelConfig) =>
     call<ModelTestResult>("test_model", { model }),
@@ -60,7 +62,7 @@ export const api = {
     call<ImportPreview>("preview_import", { link }),
   /** Save an imported batch, with explicit replacement indexes. */
   importConfirm: (token: string, updates: number[]) =>
-    call<number>("confirm_import", { token, updates }),
+    call<ImportOutcome>("confirm_import", { token, updates }),
   /** Export a model URL with an explicit credential policy. */
   share: (id: string, includeSecret: boolean) =>
     call<string>("share_model", { id, includeSecret }),

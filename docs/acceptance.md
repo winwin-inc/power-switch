@@ -2,6 +2,12 @@
 
 日期：2026-09-22。执行环境：macOS Apple Silicon、WorkBuddy 5.5.6、Codex 0.155.0-alpha.9.2。
 
+## New API → Codex 回归（2026-09-28）
+
+使用本机模拟 New API 管理及 Responses 接口、内存凭证库和隔离目录，验证密钥创建后首次推理返回 401 时模型库不保存；重试复用原密钥，Responses 返回 `completed` 与非空助手文本后入库。随后预览并应用到 Codex，检查 `wire_api = "responses"`、模型目录和备份，再恢复配置到原先不存在状态。真实 `codex app-server --strict-config` 也成功读取独立生成的配置，并将验收模型列为默认项。
+
+前端 53 项、Rust 单元与集成测试 80 项通过；TypeScript 类型检查、生产 Web 构建、Rust 格式检查及 Clippy `-D warnings` 通过。上述推理调用使用本机模拟接口；生产 New API 账号的授权与实际付费调用未在本次回归中执行。
+
 ## 自动化验证
 
 | 项目                            | 结果                                                     |

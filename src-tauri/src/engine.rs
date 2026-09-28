@@ -126,6 +126,12 @@ pub struct ImportPreview {
     pub rows: Vec<ImportRow>,
 }
 
+/// Snapshot the exact import candidates before network verification begins.
+pub struct ImportPlan {
+    pub revision: String,
+    pub candidates: Vec<(usize, ModelConfig)>,
+}
+
 pub struct Engine {
     pub paths: Paths,
     pending: HashMap<String, Pending>,
@@ -627,18 +633,20 @@ impl Engine {
         Ok(ImportPreview { token, rows })
     }
 
-    /// Confirm a staged batch, preserving existing keys when a shared update omits them.
-    pub fn confirm_import(&mut self, token: &str, updates: &[usize]) -> AppResult<usize> {
-        let (created, models) = self.imports.remove(token).ok_or("导入预览已失效")?;
-        if now().saturating_sub(created) >= 600 {
+    /// Resolve duplicate choices and inherited keys against one library revision.
+    pub fn import_plan(&self, token: &str, updates: &[usize]) -> AppResult<ImportPlan> {
+        let (created, models) = self.imports.get(token).ok_or("导入预览已失效")?;
+        if now().saturating_sub(*created) >= 600 {
             return Err("导入预览已过期".into());
         }
         if updates.iter().any(|i| *i >= models.len()) {
             return Err("更新条目索引无效".into());
         }
+        let revision = Snapshot::read(&self.paths.data.join("models.json"))?.fingerprint();
         let mut store = self.load()?;
-        let mut count = 0;
-        for (index, mut model) in models.into_iter().enumerate() {
+        let mut candidates = Vec::new();
+        for (index, original) in models.iter().enumerate() {
+            let mut model = original.clone();
             if let Some(old) = store.models.iter_mut().find(|m| m.same_endpoint(&model)) {
                 if !updates.contains(&index) {
                     continue;
@@ -647,14 +655,56 @@ impl Engine {
                 if model.api_key.is_empty() {
                     model.api_key = old.api_key.clone();
                 }
-                *old = model;
+                *old = model.clone();
+            } else {
+                store.models.push(model.clone());
+            }
+            candidates.push((index, model));
+        }
+        Ok(ImportPlan {
+            revision,
+            candidates,
+        })
+    }
+
+    /// Save only candidates that passed inference, rejecting any stale library or import preview.
+    pub fn commit_verified_import(
+        &mut self,
+        token: &str,
+        updates: &[usize],
+        plan: &ImportPlan,
+        passed: &[usize],
+    ) -> AppResult<usize> {
+        let current = self.import_plan(token, updates)?;
+        if current.revision != plan.revision || current.candidates != plan.candidates {
+            return Err("测试期间模型库已变化，请重新预览并测试导入".into());
+        }
+        if passed
+            .iter()
+            .any(|index| !plan.candidates.iter().any(|(i, _)| i == index))
+        {
+            return Err("导入测试结果与预览不匹配".into());
+        }
+        let mut store = self.load()?;
+        let mut count = 0;
+        for (index, candidate) in &plan.candidates {
+            if !passed.contains(index) {
+                continue;
+            }
+            let mut model = candidate.clone();
+            if let Some(old) = store.models.iter_mut().find(|m| m.same_endpoint(&model)) {
+                model.id = old.id.clone();
+                *old = model.clone();
             } else {
                 model.id = uuid::Uuid::new_v4().to_string();
-                store.models.push(model);
+                store.models.push(model.clone());
             }
             count += 1;
         }
-        self.save(&store)?;
+        if count > 0 {
+            self.save(&store)?;
+            self.imports.remove(token);
+        }
         Ok(count)
     }
 

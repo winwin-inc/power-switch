@@ -17,7 +17,7 @@ export async function newApiDemo(
   if (command === "new_api_check")
     return {
       baseUrl,
-      version: "v1.0.0-rc.21",
+      version: "演示模式",
       provider: { name: "Keycloak", slug: "keycloak" },
     };
   if (command === "new_api_login") {

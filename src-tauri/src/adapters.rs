@@ -176,16 +176,20 @@ pub fn catalog_entry(model: &ModelConfig) -> AppResult<Value> {
         .iter()
         .map(|s| json!({"effort":s,"description":s}))
         .collect();
-    Ok(json!({
+    let mut entry = json!({
         "slug":model.model_id, "display_name":model.name, "description":model.name,
-        "default_reasoning_level":model.reasoning_levels.first(), "supported_reasoning_levels":levels,
+        "supported_reasoning_levels":levels,
         "shell_type":"shell_command", "visibility":"list", "supported_in_api":true, "priority":0,
         "base_instructions":"You are Codex, a coding agent. You and the user share the same workspace and collaborate to achieve the user's goals.",
         "supports_reasoning_summaries":!model.reasoning_levels.is_empty(), "default_reasoning_summary":"none", "support_verbosity":false,
         "truncation_policy":{"mode":"bytes","limit":10000}, "context_window":window, "max_context_window":window,
         "effective_context_window_percent":95, "supports_parallel_tool_calls":false,
         "experimental_supported_tools":[], "input_modalities":if model.supports_images {vec!["text","image"]} else {vec!["text"]}
-    }))
+    });
+    if let Some(level) = model.reasoning_levels.first() {
+        entry["default_reasoning_level"] = json!(level);
+    }
+    Ok(entry)
 }
 
 /// Build the provider and a merged, separately owned catalog as a single transaction.
