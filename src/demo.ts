@@ -37,6 +37,8 @@ let settings: Settings = {
   workbuddyPath: null,
   claudePath: null,
   codexDir: null,
+  autoUpdate: true,
+  receiveRc: false,
 };
 
 /** Keep the browser preview useful without pretending to have native file access. */

@@ -1,7 +1,7 @@
 {
   "name": "power-switch",
   "private": true,
-  "version": "0.1.6-rc.2",
+  "version": "0.1.6-rc.3",
   "type": "module",
   "packageManager": "pnpm@10.18.3",
   "pnpm": {
@@ -28,7 +28,6 @@
     "@tauri-apps/plugin-deep-link": "^2.4.0",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.12.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

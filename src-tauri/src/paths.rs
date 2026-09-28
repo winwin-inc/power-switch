@@ -2,7 +2,7 @@ use crate::model::{AgentKind, AppResult};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Default, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
     #[serde(default = "system_theme")]
@@ -13,6 +13,29 @@ pub struct Settings {
     pub claude_path: Option<PathBuf>,
     #[serde(default)]
     pub codex_dir: Option<PathBuf>,
+    #[serde(default = "automatic_updates_enabled")]
+    pub auto_update: bool,
+    #[serde(default)]
+    pub receive_rc: bool,
+}
+
+/// Preserve startup update checks for users whose saved settings predate these switches.
+fn automatic_updates_enabled() -> bool {
+    true
+}
+
+impl Default for Settings {
+    /// Start with automatic checks enabled and the stable release channel selected.
+    fn default() -> Self {
+        Self {
+            theme: system_theme(),
+            workbuddy_path: None,
+            claude_path: None,
+            codex_dir: None,
+            auto_update: automatic_updates_enabled(),
+            receive_rc: false,
+        }
+    }
 }
 
 /// Follow the OS appearance until the user chooses a theme.
@@ -109,4 +132,20 @@ pub fn validate_absolute(path: &Path) -> AppResult<()> {
         return Err("配置路径必须为不含 .. 的绝对路径".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::Settings;
+
+    /// Existing settings files keep automatic checks but do not opt in to RC updates.
+    #[test]
+    fn old_settings_use_stable_update_defaults() {
+        let settings: Settings = serde_json::from_str(
+            r#"{"theme":"dark","workbuddyPath":null,"claudePath":null,"codexDir":null}"#,
+        )
+        .unwrap();
+        assert!(settings.auto_update);
+        assert!(!settings.receive_rc);
+    }
 }

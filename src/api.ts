@@ -38,7 +38,7 @@ export const api = {
     call<ModelTestResult>("test_model", { model }),
   /** Delete a model from the library only. */
   delete: (id: string) => call<void>("delete_model", { id }),
-  /** Persist validated appearance and path settings. */
+  /** Persist validated appearance, path and update-channel settings. */
   settings: (settings: Settings) => call<void>("save_settings", { settings }),
   /** Generate the second-confirmation preview. */
   preview: (id: string, agents: AgentKind[], selectWorkbuddyModel: boolean) =>

@@ -151,7 +151,7 @@ async fn list_models(connection: crate::model_catalog::ModelConnection) -> AppRe
 fn delete_model(state: Shared<'_>, id: String) -> AppResult<()> {
     with_engine(state, |e| e.delete(&id))
 }
-/// Update theme and explicit config locations.
+/// Update appearance, config locations and update-channel preferences.
 #[tauri::command]
 fn save_settings(state: Shared<'_>, settings: Settings) -> AppResult<()> {
     with_engine(state, |e| e.settings(settings))
@@ -335,7 +335,9 @@ pub fn run() {
             crate::new_api_desktop::new_api_catalog,
             crate::new_api_desktop::new_api_import,
             crate::new_api_desktop::new_api_test,
-            crate::new_api_desktop::new_api_disconnect
+            crate::new_api_desktop::new_api_disconnect,
+            crate::update_desktop::check_app_update,
+            crate::update_desktop::install_app_update
         ])
         .run(tauri::generate_context!())
         .expect("power-switch 启动失败");

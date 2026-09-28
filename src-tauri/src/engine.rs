@@ -267,6 +267,9 @@ impl Engine {
         if !["light", "dark", "system"].contains(&settings.theme.as_str()) {
             return Err("无效的主题设置".into());
         }
+        if !settings.auto_update && settings.receive_rc {
+            return Err("请先启用自动更新，再选择测试计划".into());
+        }
         let paths = self.paths.describe(&settings)?;
         let mut unique = std::collections::HashSet::new();
         for p in paths {

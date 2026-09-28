@@ -54,6 +54,8 @@ const data: AppData = {
     workbuddyPath: null,
     claudePath: null,
     codexDir: null,
+    autoUpdate: true,
+    receiveRc: false,
   },
   agents: [],
   dataDir: "/test/app",

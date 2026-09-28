@@ -2976,7 +2976,7 @@ dependencies = [
 
 [[package]]
 name = "power-switch"
-version = "0.1.6-rc.2"
+version = "0.1.6-rc.3"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -2984,6 +2984,7 @@ dependencies = [
  "keyring",
  "pinyin",
  "reqwest 0.12.28",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml_ng",

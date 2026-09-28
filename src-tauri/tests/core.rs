@@ -435,6 +435,13 @@ fn native_paths_and_environment_overrides() {
             ..Settings::default()
         })
         .is_err());
+    assert!(e
+        .settings(Settings {
+            auto_update: false,
+            receive_rc: true,
+            ..Settings::default()
+        })
+        .is_err());
 }
 
 /// UTF-8 model names and reserved URL characters survive share-link serialization.

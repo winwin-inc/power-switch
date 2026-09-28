@@ -51,6 +51,8 @@ export interface Settings {
   workbuddyPath: string | null;
   claudePath: string | null;
   codexDir: string | null;
+  autoUpdate: boolean;
+  receiveRc: boolean;
 }
 export interface AgentPath {
   agent: AgentKind;
