@@ -75,6 +75,7 @@ const preview: ApplyPreview = {
 const successfulTest: ModelTestResult = {
   message: "测试通过：已发送 test 并收到模型回复。",
   elapsedMs: 120,
+  verificationToken: "verified-test-ticket",
 };
 beforeEach(() => {
   vi.clearAllMocks();
@@ -88,6 +89,23 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("model editing", () => {
+  it("offers Responses for Codex while retaining the provider model-list requirement", async () => {
+    render(
+      <ModelForm
+        initial={newModel()}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+        busy={false}
+      />,
+    );
+    const protocol = screen.getByRole("combobox", { name: "协议" });
+    expect(
+      screen.getByRole("option", { name: "OpenAI Responses" }),
+    ).toBeEnabled();
+    await userEvent.selectOptions(protocol, "openai-responses");
+    expect(screen.getByRole("button", { name: "保存模型" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "测试模型" })).toBeDisabled();
+  });
   it("opens the animated newcomer guide and leads into New API import", async () => {
     render(<App />);
     await screen.findByText("我的模型");
@@ -135,6 +153,21 @@ describe("model editing", () => {
     expect(
       screen.getByRole("checkbox", { name: "图像输入" }),
     ).not.toBeChecked();
+  });
+  it("defaults new model context to one million tokens and preserves saved values", async () => {
+    const props = { onSave: vi.fn(), onCancel: vi.fn(), busy: false };
+    const { rerender } = render(<ModelForm initial={newModel()} {...props} />);
+    await userEvent.click(screen.getByText("高级设置"));
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(1_000_000);
+    rerender(
+      <ModelForm
+        key="saved-context"
+        initial={{ ...sample, contextWindow: 128_000 }}
+        {...props}
+      />,
+    );
+    await userEvent.click(screen.getByText("高级设置"));
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(128_000);
   });
   it("masks the key and only saves on submit", async () => {
     const user = userEvent.setup();
@@ -524,17 +557,23 @@ describe("settings and backup controls", () => {
     );
     expect(
       screen.getByRole("textbox", { name: "Codex 配置路径" }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     expect(
       screen.getByRole("button", { name: /选择 Codex.*配置目录/ }),
-    ).toBeDisabled();
+    ).toBeEnabled();
+    await userEvent.click(
+      screen.getByRole("button", { name: /选择 Codex.*配置目录/ }),
+    );
+    expect(screen.getByRole("textbox", { name: "Codex 配置路径" })).toHaveValue(
+      "C:\\portable\\codex",
+    );
     expect(api.settings).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "保存设置" }));
     expect(api.settings).toHaveBeenCalledWith({
       ...data.settings,
       workbuddyPath: "/portable/models.json",
       claudePath: "/chosen/custom.json",
-      codexDir: null,
+      codexDir: "C:\\portable\\codex",
     });
     expect(api.apply).not.toHaveBeenCalled();
   });
@@ -588,7 +627,7 @@ describe("confirmation boundary", () => {
     ).toBeChecked();
     expect(next).toHaveBeenCalledWith(["workbuddy"], true);
   });
-  it("keeps Codex unavailable even for its native protocol", () => {
+  it("allows Codex only for its native Responses protocol", async () => {
     const next = vi.fn();
     render(
       <AgentPicker
@@ -598,11 +637,10 @@ describe("confirmation boundary", () => {
       />,
     );
     const codex = screen.getByRole("checkbox", { name: /Codex/ });
-    expect(codex).toBeDisabled();
-    expect(codex).not.toBeChecked();
-    expect(screen.getByText("暂不支持")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "预览变更" })).toBeDisabled();
-    expect(next).not.toHaveBeenCalled();
+    expect(codex).toBeEnabled();
+    expect(codex).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
+    expect(next).toHaveBeenCalledWith(["codex"], false);
   });
   it("allows opting out and resets the default after reselecting WorkBuddy", async () => {
     const next = vi.fn();
@@ -672,9 +710,87 @@ describe("confirmation boundary", () => {
     expect(api.cancel).toHaveBeenCalledWith("preview-1");
     expect(api.apply).not.toHaveBeenCalled();
   });
+  it("applies a saved Responses model to Codex without another network test", async () => {
+    vi.mocked(api.data).mockResolvedValue({
+      ...data,
+      models: [
+        { ...sample, protocol: "openai-responses", contextWindow: 128000 },
+      ],
+    });
+    vi.mocked(api.preview).mockResolvedValue(preview);
+    vi.mocked(api.apply).mockResolvedValue({
+      backupId: "backup-1",
+      paths: [],
+      message: "已应用",
+    });
+    render(<App />);
+    await screen.findByText("我的模型");
+    await userEvent.click(screen.getByRole("button", { name: "应用到 Agent" }));
+    await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
+    expect(api.preview).toHaveBeenCalledWith("1", ["codex"], false);
+    await userEvent.click(
+      screen.getByRole("button", { name: "确认覆盖并备份" }),
+    );
+    await screen.findByText("已应用");
+    expect(api.testModel).not.toHaveBeenCalled();
+  });
 });
 
 describe("library and imports", () => {
+  it("enables the Codex filter", async () => {
+    render(<App />);
+    await screen.findByText("我的模型");
+    const codex = screen.getByRole("button", { name: "Codex" });
+    expect(codex).toBeEnabled();
+    await userEvent.click(codex);
+    expect(screen.getByText("没有找到匹配的模型")).toBeInTheDocument();
+  });
+  it("shows which imported rows failed while keeping successful rows", async () => {
+    vi.mocked(api.importPreview).mockResolvedValue({
+      token: "import-1",
+      rows: [
+        {
+          index: 0,
+          name: "成功模型",
+          protocol: "openai-chat",
+          baseUrl: "https://api.example.com/v1",
+          modelId: "ok",
+          hasApiKey: true,
+          duplicate: false,
+        },
+        {
+          index: 1,
+          name: "失败模型",
+          protocol: "openai-responses",
+          baseUrl: "https://api.example.com/v1",
+          modelId: "bad",
+          hasApiKey: true,
+          duplicate: false,
+        },
+      ],
+    });
+    vi.mocked(api.importConfirm).mockResolvedValue({
+      savedCount: 1,
+      failures: [{ index: 1, message: "测试未通过" }],
+    });
+    render(<App />);
+    await screen.findByText("我的模型");
+    await userEvent.click(screen.getByRole("button", { name: "导入链接" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "模型链接" }),
+      "power-switch://model/import?v=1&data=test",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "预览导入" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "确认导入" }),
+    );
+    expect(
+      await screen.findByText("已保存 1 个模型，尚未应用到 Agent。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "第 2 项未保存：测试未通过",
+    );
+  });
   it("filters locally and hides list credentials", async () => {
     render(<App />);
     await screen.findByText("我的模型");

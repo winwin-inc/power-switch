@@ -1,6 +1,6 @@
 # power-switch
 
-power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把模型配置应用到 WorkBuddy 和 Claude Code。Codex 暂不支持。
+power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把模型配置应用到 WorkBuddy、Claude Code 和 Codex。
 
 ## 下载与安装
 
@@ -28,7 +28,7 @@ power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把
 
 ### 2. 测试模型
 
-点击“测试模型”。应用会发送一次简单的文本请求。测试成功后才能保存模型；修改模型信息后需要重新测试。
+点击“测试模型”。应用会发送一次简单的文本请求。测试成功后才能保存模型；修改模型信息后需要重新测试。从 New API 添加和分享链接导入也会在入库前测试，批量导入仅保存测试成功的条目。
 
 测试只验证基本文本调用，不代表图像、工具调用或完整上下文能力一定可用。
 
@@ -36,7 +36,7 @@ power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把
 
 在模型卡片点击“应用到 Agent”：
 
-1. 选择 WorkBuddy 或 Claude Code。
+1. 选择与模型协议兼容的 WorkBuddy、Claude Code 或 Codex。
 2. 预览将要修改的文件和内容。
 3. 确认后写入配置并自动备份。
 
@@ -51,7 +51,7 @@ WorkBuddy 写入成功后可以打开新建任务页，请在 WorkBuddy 中手�
 3. 选择客户端、平台名称和模型。
 4. 点击“创建并添加”。
 
-接口固定使用 `default` 分组。同一实例、同一账号重复添加模型时会复用专属密钥；模型仍需测试通过后才能保存。
+接口固定使用 `default` 分组。同一实例、同一账号重复添加模型时会复用专属密钥；创建或复用密钥后会测试模型，成功才保存到模型库。测试失败时，密钥可能已经创建，重试会复用已有密钥。
 
 ## 配置备份与恢复
 
@@ -71,8 +71,11 @@ WorkBuddy 写入成功后可以打开新建任务页，请在 WorkBuddy 中手�
 | ----------- | ------------------------------------- |
 | WorkBuddy   | 用户目录下的 `.workbuddy/models.json` |
 | Claude Code | 用户目录下的 `.claude/settings.json`  |
+| Codex       | 用户目录下的 `.codex/config.toml`     |
 
-Codex 暂不支持，其配置入口已禁用。
+Codex 使用 OpenAI Responses 协议。手动添加时，所选模型必须由服务商的 `/models` 接口返回，并需填写实际上下文窗口。应用配置时会生成独立的模型目录文件，保留现有配置中的其他供应商和设置。
+
+配置智谱或 MiniMax 时，可分别参考其 [Codex 接入说明](https://docs.bigmodel.cn/cn/coding-plan/tool/codex)和 [Codex 手动配置说明](https://platform.minimax.cn/docs/token-plan/codex)。API 地址填写文档中的基础地址；power-switch 会向其 `/responses` 端点发送测试请求。
 
 修改路径后点击“保存设置”。设置只会影响之后的读取和写入，不会立即修改 Agent 配置。
 
@@ -101,6 +104,6 @@ WorkBuddy 的新任务页面支持打开，但深链不能可靠地替你选择�
 
 应用启动后会检查新版本；发现更新时，点击左下角版本号下方的提示即可安装，完成后按提示重启。macOS DMG、Windows MSI 和 Linux AppImage 支持应用内更新；其他安装包可前往 [Releases](https://github.com/winwin-inc/power-switch/releases) 手动下载。`SHA256SUMS` 可用于核对文件完整性。
 
-### Codex 或 OpenAI Responses 为什么不可选？
+### 为什么某个 Codex 模型不能添加？
 
-目前仅支持 WorkBuddy 和 Claude Code。之前保存的 OpenAI Responses 配置仍会显示，但不能重新选择或应用。
+确认服务商提供 `/models` 清单，且该模型 ID 位于清单中；随后检查 `/responses` 是否返回包含助手文本的已完成响应。两项检查缺一不可。

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "power-switch",
-  "version": "0.1.6-rc.1",
+  "version": "0.1.6-rc.2",
   "identifier": "com.powerswitch.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev:web",
@@ -30,7 +30,7 @@
     "targets": "all",
     "windows": {
       "wix": {
-        "version": "0.1.6.1"
+        "version": "0.1.6.2"
       }
     },
     "shortDescription": "模型随心切换",

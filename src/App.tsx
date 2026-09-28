@@ -68,6 +68,7 @@ import {
   type ApplyPreview,
   type BackupRecord,
   type ImportPreview,
+  type ImportOutcome,
   type ModelConfig,
   type ModelTestState,
   type Settings,
@@ -82,6 +83,7 @@ type ModalState =
   | { kind: "review"; preview: ApplyPreview }
   | { kind: "import" }
   | { kind: "import-review"; preview: ImportPreview }
+  | { kind: "import-result"; outcome: ImportOutcome }
   | { kind: "share"; model: ModelConfig }
   | { kind: "delete"; model: ModelConfig }
   | { kind: "delete-backup"; backup: BackupRecord }
@@ -615,7 +617,7 @@ export default function App() {
                       </span>
                       <span>
                         <span className="mini-dot graphite" />
-                        Codex（暂不支持）
+                        Codex
                       </span>
                     </div>
                   </section>
@@ -629,10 +631,6 @@ export default function App() {
                       ].map(([value, label]) => (
                         <button
                           key={value}
-                          disabled={value === "codex"}
-                          title={
-                            value === "codex" ? "Codex 暂不支持" : undefined
-                          }
                           className={filter === value ? "selected" : ""}
                           onClick={() => setFilter(value)}
                         >
@@ -704,9 +702,7 @@ export default function App() {
                               <span
                                 className={`tag protocol-tag ${model.protocol}`}
                               >
-                                {model.protocol === "openai-responses"
-                                  ? "OpenAI Responses（暂不支持）"
-                                  : protocolLabels[model.protocol]}
+                                {protocolLabels[model.protocol]}
                               </span>
                             </div>
                             <div className="card-details">
@@ -731,9 +727,7 @@ export default function App() {
                               <div>
                                 <span className="detail-label">适用 AGENT</span>
                                 <span>
-                                  {nativeAgent[model.protocol] === "codex"
-                                    ? "Codex（暂不支持）"
-                                    : agentLabels[nativeAgent[model.protocol]]}
+                                  {agentLabels[nativeAgent[model.protocol]]}
                                 </span>
                               </div>
                             </div>
@@ -1067,7 +1061,7 @@ export default function App() {
             onCancel={closeModal}
             onSave={(model, result) =>
               void run(async () => {
-                const saved = await api.save(model);
+                const saved = await api.save(model, result.verificationToken!);
                 pendingTests.current.delete(saved.id);
                 setModelTests((old) => ({
                   ...old,
@@ -1170,14 +1164,36 @@ export default function App() {
             busy={busy}
             onConfirm={(updates) =>
               void run(async () => {
-                const count = await api.importConfirm(
+                const outcome = await api.importConfirm(
                   modal.preview.token,
                   updates,
                 );
-                await done(`已导入 ${count} 个模型，尚未应用到 Agent。`);
+                await refresh();
+                setModal({ kind: "import-result", outcome });
               })
             }
           />
+        </Modal>
+      )}
+      {modal?.kind === "import-result" && (
+        <Modal
+          title="导入结果"
+          description="仅通过模型调用测试的条目已保存。"
+          onClose={closeModal}
+        >
+          <p role="status">
+            已保存 {modal.outcome.savedCount} 个模型，尚未应用到 Agent。
+          </p>
+          {modal.outcome.failures.map((failure) => (
+            <p role="alert" key={failure.index}>
+              第 {failure.index + 1} 项未保存：{failure.message}
+            </p>
+          ))}
+          <div className="modal-footer">
+            <button className="button primary" onClick={closeModal}>
+              完成
+            </button>
+          </div>
         </Modal>
       )}
       {modal?.kind === "share" && (
@@ -1586,9 +1602,7 @@ function SettingsPage({
           return (
             <div className="field path-field" key={agent.agent}>
               <span>
-                {agent.agent === "codex"
-                  ? "Codex（暂不支持）"
-                  : agentLabels[agent.agent]}{" "}
+                {agentLabels[agent.agent]}{" "}
                 {agent.agent === "codex" ? "配置目录" : "配置文件"}
                 <span className={`tag ${agent.exists ? "green" : ""}`}>
                   {agent.exists ? "已找到配置" : "尚未创建"}
@@ -1599,7 +1613,7 @@ function SettingsPage({
                   aria-label={`${agentLabels[agent.agent]} 配置路径`}
                   value={settings[key] ?? ""}
                   placeholder="自动识别（推荐）"
-                  disabled={busy || picking || agent.agent === "codex"}
+                  disabled={busy || picking}
                   onChange={(e) =>
                     setSettings({ ...settings, [key]: e.target.value || null })
                   }
@@ -1622,7 +1636,7 @@ function SettingsPage({
                 <button
                   type="button"
                   className="button secondary"
-                  disabled={busy || picking || agent.agent === "codex"}
+                  disabled={busy || picking}
                   onClick={() =>
                     void choosePath(key, "directory", agentLabels[agent.agent])
                   }

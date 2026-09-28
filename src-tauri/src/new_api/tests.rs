@@ -36,23 +36,23 @@ struct Fixture {
     tokens: Arc<Mutex<Vec<Value>>>,
 }
 
-/// Match rc.21's raw key contract and reject masked, malformed and double-prefixed values.
+/// Keep key format opaque while rejecting masks and control characters.
 #[test]
-fn full_key_accepts_raw_or_single_prefix_only() {
+fn full_key_accepts_opaque_formats_and_rejects_masks() {
     let raw = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL";
-    assert_eq!(
-        normalize_full_key(&json!(raw)).unwrap(),
-        format!("sk-{raw}")
-    );
+    assert_eq!(normalize_full_key(&json!(raw)).unwrap(), raw);
     assert_eq!(
         normalize_full_key(&json!(format!("sk-{raw}"))).unwrap(),
         format!("sk-{raw}")
+    );
+    assert_eq!(
+        normalize_full_key(&json!("opaque-v2.key_+")).unwrap(),
+        "opaque-v2.key_+"
     );
     for invalid in [
         json!(null),
         json!(""),
         json!("sk-***masked***"),
-        json!(format!("sk-sk-{raw}")),
         json!(format!("{raw}\n")),
     ] {
         assert_eq!(normalize_full_key(&invalid).unwrap_err().code, "key");
@@ -67,12 +67,13 @@ async fn fixture() -> Fixture {
     let client = ApiClient::new(&server.uri()).unwrap();
     connector.session = Some(Session {
         client,
+        auth: SessionAuth::Cookie,
         user: user(),
         expires_at: now() + 86400,
         verified_at: now(),
     });
     Mock::given(method("GET")).and(path("/api/status")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":{
-        "version":SUPPORTED_VERSION,"server_address":server.uri(),"custom_oauth_providers":[{"name":"Keycloak","slug":"keycloak","client_id":"public-client","authorization_endpoint":"https://idp.example/authorize","scopes":"openid profile email"}]
+        "version":"v1.0.0-rc.21","server_address":server.uri(),"custom_oauth_providers":[{"name":"Keycloak","slug":"keycloak","client_id":"public-client","authorization_endpoint":"https://idp.example/authorize","scopes":"openid profile email"}]
     }}))).mount(&server).await;
     Mock::given(method("GET"))
         .and(path("/api/user/self/groups"))
@@ -104,6 +105,12 @@ async fn fixture() -> Fixture {
             ResponseTemplate::new(200)
                 .set_body_json(json!({"data":[{"id":"model-one"},{"id":"responses-only"}]})),
         )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(401))
+        .with_priority(10)
         .mount(&server)
         .await;
     let tokens = Arc::new(Mutex::new(Vec::<Value>::new()));
@@ -338,7 +345,11 @@ async fn catalog_intersects_permissions_and_protocols() {
     assert_eq!(catalog.models.len(), 2);
     assert_eq!(
         catalog.models[0].protocols,
-        vec![Protocol::OpenaiChat, Protocol::AnthropicMessages]
+        vec![
+            Protocol::OpenaiChat,
+            Protocol::OpenaiResponses,
+            Protocol::AnthropicMessages,
+        ]
     );
     assert!(f
         .connector
@@ -353,6 +364,27 @@ async fn catalog_intersects_permissions_and_protocols() {
             .unwrap()
             .code,
         "account_changed"
+    );
+}
+
+/// A catalog with no recognizable protocol metadata must explain why import is blocked.
+#[tokio::test]
+async fn catalog_rejects_missing_protocol_metadata() {
+    let mut f = fixture().await;
+    Mock::given(method("GET"))
+        .and(path("/api/pricing"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":[]})))
+        .with_priority(1)
+        .mount(&f.server)
+        .await;
+    assert_eq!(
+        f.connector
+            .catalog(&f.server.uri(), 77, None)
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "protocol_metadata"
     );
 }
 
@@ -704,6 +736,7 @@ async fn rejects_invalid_model_config_before_creating() {
     let mut req = request(&f.server.uri());
     req.protocol = Protocol::OpenaiResponses;
     req.context_window = Some(128000);
+    req.model_id = "no-metadata".into();
     assert_eq!(
         f.connector.prepare_import(req).await.err().unwrap().code,
         "model"
@@ -757,7 +790,8 @@ async fn checks_business_success_and_redacts_error_bodies() {
 #[tokio::test]
 async fn canceled_timed_out_and_replayed_logins_cannot_complete() {
     let mut f = fixture().await;
-    Mock::given(path("/api/oauth/state"))
+    Mock::given(method("GET"))
+        .and(path("/api/oauth/state"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":"state-nonce"})),
         )
@@ -803,7 +837,8 @@ async fn oauth_verifies_identity_and_saves_only_in_vault() {
     let mut f = fixture().await;
     let vault = MemoryVault::default();
     f.connector.vault = Box::new(vault.clone());
-    Mock::given(path("/api/oauth/state"))
+    Mock::given(method("GET"))
+        .and(path("/api/oauth/state"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("set-cookie", "session=preauth; Path=/; HttpOnly")
@@ -844,6 +879,349 @@ async fn oauth_verifies_identity_and_saves_only_in_vault() {
     assert!(vault.get(&f.server.uri()).unwrap().is_none());
 }
 
+/// A release label is diagnostic: the same public OAuth contract may appear under any version.
+#[tokio::test]
+async fn check_accepts_unknown_release_labels() {
+    let server = MockServer::start().await;
+    let version = Arc::new(Mutex::new("v1.0.0-rc.40".to_string()));
+    let current = version.clone();
+    let base = server.uri();
+    Mock::given(method("GET"))
+        .and(path("/api/status"))
+        .respond_with(move |_: &Request| {
+            ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":{
+                "version":current.lock().unwrap().as_str(),"server_address":base,
+                "custom_oauth_providers":[{"name":"Keycloak","slug":"keycloak","client_id":"public-client","authorization_endpoint":"https://idp.example/authorize"}]
+            }}))
+        })
+        .mount(&server)
+        .await;
+    let connector = NewApi::new(
+        tempfile::tempdir().unwrap().path().into(),
+        Box::<MemoryVault>::default(),
+    );
+    assert_eq!(
+        connector.check(&server.uri()).await.unwrap().version,
+        "v1.0.0-rc.40"
+    );
+    *version.lock().unwrap() = "future-build-with-same-contract".into();
+    assert_eq!(
+        connector.check(&server.uri()).await.unwrap().version,
+        "future-build-with-same-contract"
+    );
+}
+
+/// The new OAuth flow uses POST state, bearer management calls, and a scoped refresh cookie.
+#[tokio::test]
+async fn bearer_oauth_login_verifies_and_persists_only_private_credentials() {
+    let mut f = fixture().await;
+    let vault = MemoryVault::default();
+    f.connector.vault = Box::new(vault.clone());
+    f.connector.session = None;
+    Mock::given(method("POST"))
+        .and(path("/api/oauth/state"))
+        .and(body_partial_json(
+            json!({"provider":"keycloak","intent":"login"}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({"success":true,"data":{"flow_token":"new-flow","expires_at":now()+600}}),
+        ))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/oauth/keycloak"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("set-cookie", "new_api_refresh=refresh-one; Path=/api/user/auth; HttpOnly")
+            .set_body_json(json!({"success":true,"data":{
+                "access_token":"access-one","token_type":"Bearer","access_expires_at":now()+3600,
+                "session":{"sid":"sid-one","expires_at":now()+86400},"user":user()
+            }})))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/user/self"))
+        .and(header("Authorization", "Bearer access-one"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":user()})),
+        )
+        .mount(&f.server)
+        .await;
+    let flow = f.connector.start_login(&f.server.uri()).await.unwrap();
+    assert!(flow
+        .url
+        .query_pairs()
+        .any(|(key, value)| key == "state" && value == "new-flow"));
+    let mut callback = flow.callback;
+    callback.set_query(Some("state=new-flow&code=one-time-code"));
+    f.connector.finish_login(&flow.id, &callback).await.unwrap();
+    let saved: Value = serde_json::from_str(&vault.get(&f.server.uri()).unwrap().unwrap()).unwrap();
+    assert_eq!(saved["auth"]["mode"], "bearer");
+    assert_eq!(
+        saved["auth"]["refresh_cookie"],
+        "new_api_refresh=refresh-one"
+    );
+    assert!(!f.dir.path().join("new-api.json").exists());
+    let requests = f.server.received_requests().await.unwrap();
+    assert!(requests.iter().all(
+        |request| request.url.path() != "/api/oauth/state" || request.method.as_str() == "POST"
+    ));
+    assert!(requests
+        .iter()
+        .filter(|request| request.url.path() == "/api/user/self")
+        .all(|request| !request.headers.contains_key("new-api-user")));
+}
+
+/// Restoring a bearer session refreshes through its scoped cookie and saves the rotation.
+#[tokio::test]
+async fn bearer_session_refreshes_after_restart_without_changing_account() {
+    let mut f = fixture().await;
+    let vault = MemoryVault::default();
+    f.connector.vault = Box::new(vault.clone());
+    f.connector.session = None;
+    let base = f.server.uri();
+    vault
+        .set(
+            &base,
+            &json!({
+                "base_url":base,"user":user(),"expires_at":now()+86400,
+                "auth":{"mode":"bearer","access_token":"access-old","access_expires_at":now()-1,
+                    "refresh_cookie":"new_api_refresh=refresh-old","session_id":"sid-one"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+    Mock::given(method("POST"))
+        .and(path("/api/user/auth/refresh"))
+        .and(header("Origin", base.as_str()))
+        .and(header("X-Auth-Session", "sid-one"))
+        .and(header("cookie", "new_api_refresh=refresh-old"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("set-cookie", "new_api_refresh=refresh-new; Path=/api/user/auth; HttpOnly")
+            .set_body_json(json!({"success":true,"data":{
+                "access_token":"access-new","token_type":"Bearer","access_expires_at":now()+3600,
+                "session":{"sid":"sid-one","expires_at":now()+86400},"user":user()
+            }})))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/user/self"))
+        .and(header("Authorization", "Bearer access-new"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":user()})),
+        )
+        .mount(&f.server)
+        .await;
+    assert_eq!(f.connector.status(&base).await.unwrap().phase, "connected");
+    let saved: Value = serde_json::from_str(&vault.get(&base).unwrap().unwrap()).unwrap();
+    assert_eq!(saved["auth"]["access_token"], "access-new");
+    assert_eq!(
+        saved["auth"]["refresh_cookie"],
+        "new_api_refresh=refresh-new"
+    );
+    assert_eq!(f.connector.status(&base).await.unwrap().phase, "connected");
+}
+
+/// Unknown state shapes and post-OAuth challenges cannot start token creation.
+#[tokio::test]
+async fn unknown_oauth_contracts_fail_closed_without_legacy_downgrade() {
+    let mut f = fixture().await;
+    Mock::given(method("POST"))
+        .and(path("/api/oauth/state"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":{}})))
+        .mount(&f.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/oauth/state"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":"legacy-state"})),
+        )
+        .mount(&f.server)
+        .await;
+    assert_eq!(
+        f.connector
+            .start_login(&f.server.uri())
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "oauth_contract"
+    );
+    assert!(f
+        .server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .all(
+            |request| request.url.path() != "/api/oauth/state" || request.method.as_str() != "GET"
+        ));
+}
+
+/// The upstream login-verification challenge is reported without persisting a session.
+#[tokio::test]
+async fn bearer_oauth_reports_required_second_verification() {
+    let mut f = fixture().await;
+    let vault = MemoryVault::default();
+    f.connector.vault = Box::new(vault.clone());
+    f.connector.session = None;
+    Mock::given(method("POST"))
+        .and(path("/api/oauth/state"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"success":true,"data":{"flow_token":"new-flow"}})),
+        )
+        .mount(&f.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/oauth/keycloak"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":{
+                "require_verification":true,"flow_token":"verify-flow","methods":[{"type":"email"}]
+            }})),
+        )
+        .mount(&f.server)
+        .await;
+    let flow = f.connector.start_login(&f.server.uri()).await.unwrap();
+    let mut callback = flow.callback;
+    callback.set_query(Some("state=new-flow&code=one-time-code"));
+    let error = f
+        .connector
+        .finish_login(&flow.id, &callback)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "verification_required");
+    assert!(vault.get(&f.server.uri()).unwrap().is_none());
+}
+
+/// Old keychain JSON can migrate after account verification regardless of its saved release.
+#[tokio::test]
+async fn legacy_cookie_record_migrates_without_version_matching() {
+    let mut f = fixture().await;
+    let vault = MemoryVault::default();
+    f.connector.vault = Box::new(vault.clone());
+    f.connector.session = None;
+    let base = f.server.uri();
+    vault
+        .set(
+            &base,
+            &json!({
+                "base_url":base,"version":"unrelated-build","user":user(),
+                "cookie":"session=authenticated","expires_at":now()+86400
+            })
+            .to_string(),
+        )
+        .unwrap();
+    Mock::given(method("GET"))
+        .and(path("/api/user/self"))
+        .and(header("cookie", "session=authenticated"))
+        .and(header("New-Api-User", "77"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":user()})),
+        )
+        .mount(&f.server)
+        .await;
+    assert_eq!(f.connector.status(&base).await.unwrap().phase, "connected");
+    let saved: Value = serde_json::from_str(&vault.get(&base).unwrap().unwrap()).unwrap();
+    assert_eq!(saved["auth"]["mode"], "cookie");
+    assert_eq!(saved["auth"]["cookie"], "session=authenticated");
+    assert!(saved.get("version").is_none());
+}
+
+/// A validated exact key is kept unchanged; a missing prefix is added only after 401.
+#[tokio::test]
+async fn relay_key_validation_prefers_exact_server_value() {
+    let f = fixture().await;
+    let model = ModelConfig {
+        id: String::new(),
+        name: "test".into(),
+        protocol: Protocol::OpenaiChat,
+        base_url: format!("{}/v1", f.server.uri()),
+        model_id: "model-one".into(),
+        api_key: "opaque-v2.key_+".into(),
+        supports_tool_call: true,
+        supports_images: true,
+        context_window: None,
+        reasoning_levels: vec![],
+    };
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(header("Authorization", "Bearer opaque-v2.key_+"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"data":[{"id":"model-one"}]})),
+        )
+        .with_priority(1)
+        .mount(&f.server)
+        .await;
+    assert_eq!(
+        check_key(&f.server.uri(), &model).await.unwrap(),
+        model.api_key
+    );
+    let mut old = model;
+    old.api_key = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL".into();
+    assert_eq!(
+        check_key(&f.server.uri(), &old).await.unwrap(),
+        format!("sk-{}", old.api_key)
+    );
+}
+
+/// Bearer management requests can complete the existing recoverable create workflow.
+#[tokio::test]
+async fn bearer_management_imports_one_model_without_legacy_user_header() {
+    let mut f = fixture().await;
+    let mut client = ApiClient::new(&f.server.uri()).unwrap();
+    client.set_access_token("access-one".into());
+    f.connector.session = Some(Session {
+        client,
+        auth: SessionAuth::Bearer {
+            access_expires_at: now() + 3600,
+            session_id: "sid-one".into(),
+        },
+        user: user(),
+        expires_at: now() + 86400,
+        verified_at: now(),
+    });
+    let tokens = f.tokens.clone();
+    Mock::given(method("POST"))
+        .and(path("/api/token/"))
+        .and(header("Authorization", "Bearer access-one"))
+        .and(body_partial_json(
+            json!({"expired_time":-1,"unlimited_quota":true,"group":"staff"}),
+        ))
+        .respond_with(move |request: &Request| {
+            let mut token: Value = request.body_json().unwrap();
+            token["id"] = json!(1);
+            token["user_id"] = json!(77);
+            token["status"] = json!(1);
+            tokens.lock().unwrap().push(token);
+            ResponseTemplate::new(200).set_body_json(json!({"success":true}))
+        })
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let imported = f
+        .connector
+        .prepare_import(request(&f.server.uri()))
+        .await
+        .unwrap();
+    assert_eq!(imported.model.model_id, "model-one");
+    let requests = f.server.received_requests().await.unwrap();
+    assert!(requests
+        .iter()
+        .filter(|request| matches!(
+            request.url.path(),
+            "/api/user/self/groups" | "/api/user/models" | "/api/token/search" | "/api/token/"
+        ))
+        .all(|request| request
+            .headers
+            .get("authorization")
+            .is_some_and(|value| value.to_str().ok() == Some("Bearer access-one"))
+            && !request.headers.contains_key("new-api-user")));
+}
+
 /// Closing the native window while exchange is running must prevent any credential persistence.
 #[tokio::test]
 async fn cancellation_during_exchange_does_not_save_session() {
@@ -851,7 +1229,8 @@ async fn cancellation_during_exchange_does_not_save_session() {
     let vault = MemoryVault::default();
     f.connector.vault = Box::new(vault.clone());
     f.connector.session = None;
-    Mock::given(path("/api/oauth/state"))
+    Mock::given(method("GET"))
+        .and(path("/api/oauth/state"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(json!({"success":true,"data":"state-nonce"})),
         )
@@ -976,4 +1355,84 @@ async fn explicit_test_uses_correct_protocol_and_never_panel_credentials() {
         f.connector.test_model(&modified).await.err().unwrap().code,
         "model"
     );
+}
+
+/// A failed New API Responses probe leaves the library untouched; retry reuses the key and applies to Codex.
+#[tokio::test]
+async fn responses_import_retries_then_applies_to_codex() {
+    use crate::{engine::Engine, model::AgentKind, paths::Paths};
+
+    let mut f = fixture().await;
+    mount_create(&f, 200, 1).await;
+    let mut req = request(&f.server.uri());
+    req.model_id = "model-one".into();
+    req.protocol = Protocol::OpenaiResponses;
+    req.context_window = Some(128000);
+
+    let paths = Paths {
+        home: f.dir.path().join("home"),
+        data: f.dir.path().join("app-data"),
+        workbuddy_env: None,
+        codex_env: None,
+    };
+    let mut engine = Engine::open(paths.clone()).unwrap();
+    let first = f.connector.prepare_import(req).await.unwrap();
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    assert!(crate::model_probe::test_model(&first.model).await.is_err());
+    assert!(engine.data().unwrap().models.is_empty());
+
+    let existing_key = first.model.api_key.clone();
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(header(
+            "authorization",
+            format!("Bearer {existing_key}").as_str(),
+        ))
+        .and(body_partial_json(
+            json!({"model":"model-one","input":"test"}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object":"response","status":"completed","output":[{
+                "type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]
+            }]
+        })))
+        .expect(1)
+        .with_priority(1)
+        .mount(&f.server)
+        .await;
+    // A retry reconciles the existing key and the successful probe authorizes the library write.
+    let mut retry = request(&f.server.uri());
+    retry.model_id = "model-one".into();
+    retry.protocol = Protocol::OpenaiResponses;
+    retry.context_window = Some(128000);
+    let retried = f.connector.prepare_import(retry).await.unwrap();
+    assert!(retried.reused);
+    assert_eq!(retried.model.id, first.model.id);
+    crate::model_probe::test_model(&retried.model)
+        .await
+        .unwrap();
+    let model = engine
+        .upsert_from_new_api(retried.model, &retried.siblings)
+        .unwrap();
+    let preview = engine
+        .preview_apply(&model.id, &[AgentKind::Codex])
+        .unwrap();
+    assert_eq!(preview.files.len(), 2);
+    let applied = engine.apply(&preview.token).unwrap();
+    let config = std::fs::read_to_string(paths.home.join(".codex/config.toml")).unwrap();
+    assert!(config.contains("wire_api = \"responses\""));
+    assert!(config.contains("model-one"));
+    assert!(paths.home.join(".codex/power-switch-models.json").exists());
+    assert_eq!(engine.data().unwrap().models.len(), 1);
+    assert_eq!(f.tokens.lock().unwrap().len(), 1);
+
+    let restore = engine.preview_restore(&applied.backup_id).unwrap();
+    engine.apply(&restore.token).unwrap();
+    assert!(!paths.home.join(".codex/config.toml").exists());
+    assert!(!paths.home.join(".codex/power-switch-models.json").exists());
 }

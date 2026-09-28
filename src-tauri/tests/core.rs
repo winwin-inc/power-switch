@@ -325,8 +325,7 @@ fn incompatible_targets_and_missing_context_are_rejected() {
     assert!(engine.preview_apply(&m.id, &[AgentKind::Codex]).is_err());
     let mut m = model(Protocol::OpenaiResponses);
     m.context_window = None;
-    let m = engine.upsert(m).unwrap();
-    assert!(engine.preview_apply(&m.id, &[AgentKind::Codex]).is_err());
+    assert!(engine.upsert(m).is_err());
 }
 
 /// Codex writes a separate merged catalog, retains TOML comments and leaves auth untouched.
@@ -366,6 +365,7 @@ fn codex_preserves_catalog_comments_auth_and_other_providers() {
     assert_eq!(output["extension"], true);
     assert_eq!(output["models"][1]["context_window"], 128000);
     assert_eq!(output["models"][1]["input_modalities"], json!(["text"]));
+    assert!(output["models"][1].get("default_reasoning_level").is_none());
     let restore = engine.preview_restore(&result.backup_id).unwrap();
     engine.apply(&restore.token).unwrap();
     assert_eq!(
@@ -478,15 +478,89 @@ fn duplicate_import_requires_explicit_update() {
         .unwrap();
     assert!(p.rows[0].duplicate);
     assert!(!serde_json::to_string(&p).unwrap().contains(&m.api_key));
-    assert_eq!(e.confirm_import(&p.token, &[]).unwrap(), 0);
+    let skipped = e.import_plan(&p.token, &[]).unwrap();
+    assert!(skipped.candidates.is_empty());
+    assert_eq!(
+        e.commit_verified_import(&p.token, &[], &skipped, &[])
+            .unwrap(),
+        0
+    );
     let p = e
         .preview_import(&share_link(&updated, false).unwrap())
         .unwrap();
-    assert_eq!(e.confirm_import(&p.token, &[0]).unwrap(), 1);
+    let chosen = e.import_plan(&p.token, &[0]).unwrap();
+    assert_eq!(
+        e.commit_verified_import(&p.token, &[0], &chosen, &[0])
+            .unwrap(),
+        1
+    );
     let data = e.data().unwrap();
     assert_eq!(data.models.len(), 1);
     assert_eq!(data.models[0].api_key, m.api_key);
     assert_eq!(data.models[0].name, "Updated");
+}
+
+/// Link imports inherit existing credentials and commit only rows that passed verification.
+#[test]
+fn verified_import_saves_successful_rows_only() {
+    let (_temp, mut engine) = isolated();
+    let existing = engine.upsert(model(Protocol::OpenaiChat)).unwrap();
+    let mut update = existing.clone();
+    update.id.clear();
+    update.name = "updated".into();
+    update.api_key.clear();
+    let mut added = model(Protocol::AnthropicMessages);
+    added.model_id = "new-model".into();
+    added.base_url = "https://api.example.com".into();
+    let payload = serde_json::to_vec(&json!({"models":[update, added]})).unwrap();
+    let link = format!(
+        "power-switch://model/import?v=1&data={}",
+        URL_SAFE_NO_PAD.encode(payload)
+    );
+    let preview = engine.preview_import(&link).unwrap();
+    let plan = engine.import_plan(&preview.token, &[0]).unwrap();
+    assert_eq!(plan.candidates.len(), 2);
+    assert_eq!(plan.candidates[0].1.api_key, existing.api_key);
+    assert_eq!(
+        engine
+            .commit_verified_import(&preview.token, &[0], &plan, &[])
+            .unwrap(),
+        0
+    );
+    assert_eq!(engine.data().unwrap().models.len(), 1);
+    assert_eq!(
+        engine
+            .commit_verified_import(&preview.token, &[0], &plan, &[1])
+            .unwrap(),
+        1
+    );
+    let saved = engine.data().unwrap().models;
+    assert_eq!(saved.len(), 2);
+    assert_eq!(saved[0].name, existing.name);
+    assert_eq!(saved[1].model_id, "new-model");
+    assert_eq!(saved[1].api_key, "sk-TEST-ONLY");
+    assert!(engine
+        .commit_verified_import(&preview.token, &[0], &plan, &[0])
+        .is_err());
+}
+
+/// A library edit after verification invalidates the staged import before any row is saved.
+#[test]
+fn verified_import_rejects_a_changed_library() {
+    let (_temp, mut engine) = isolated();
+    let candidate = model(Protocol::OpenaiChat);
+    let preview = engine
+        .preview_import(&share_link(&candidate, true).unwrap())
+        .unwrap();
+    let plan = engine.import_plan(&preview.token, &[]).unwrap();
+    let mut unrelated = model(Protocol::AnthropicMessages);
+    unrelated.model_id = "other".into();
+    unrelated.base_url = "https://api.example.com".into();
+    engine.upsert(unrelated).unwrap();
+    assert!(engine
+        .commit_verified_import(&preview.token, &[], &plan, &[0])
+        .is_err());
+    assert_eq!(engine.data().unwrap().models.len(), 1);
 }
 
 /// Both JSON and TOML preview serialization remove credentials, including nested custom keys.

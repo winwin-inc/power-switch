@@ -49,7 +49,7 @@ const imported: NewApiImported = {
     reasoningLevels: [],
   },
   reused: false,
-  message: "模型已保存，实际调用尚未验证。",
+  message: "模型测试通过并已保存，尚未应用到 Agent。",
 };
 
 beforeEach(() => {
@@ -57,7 +57,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.mocked(newApi.check).mockResolvedValue({
     baseUrl,
-    version: "v1.0.0-rc.21",
+    version: "v1.0.0-rc.40",
     provider: { name: "Keycloak", slug: "keycloak" },
   });
   vi.mocked(newApi.status).mockResolvedValue(connected);
@@ -70,7 +70,10 @@ beforeEach(() => {
         protocols: ["openai-chat", "anthropic-messages"],
       },
       { modelId: "responses-model", protocols: ["openai-responses"] },
-      { modelId: "auto", protocols: ["openai-chat", "anthropic-messages"] },
+      {
+        modelId: "auto",
+        protocols: ["openai-chat", "openai-responses", "anthropic-messages"],
+      },
     ],
   });
   vi.mocked(newApi.importModel).mockResolvedValue(imported);
@@ -81,7 +84,7 @@ beforeEach(() => {
 });
 
 describe("New API connector", () => {
-  it("imports with the displayed identity and keeps the secret masked without testing automatically", async () => {
+  it("imports with the displayed identity after native verification and keeps the secret masked", async () => {
     const user = userEvent.setup();
     const onAdded = vi.fn().mockResolvedValue(undefined);
     render(<NewApiDialog onClose={vi.fn()} onAdded={onAdded} />);
@@ -94,11 +97,12 @@ describe("New API connector", () => {
     expect(screen.getByRole("textbox", { name: "平台名称" })).toHaveValue(
       "winwin",
     );
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(1_000_000);
     expect(
       screen.queryByRole("combobox", { name: "分组" }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "创建并添加" }));
-    await screen.findByText("模型已保存，实际调用尚未验证。");
+    await screen.findByText("模型测试通过并已保存，尚未应用到 Agent。");
     expect(newApi.importModel).toHaveBeenCalledWith(
       expect.objectContaining({
         baseUrl,
@@ -107,6 +111,7 @@ describe("New API connector", () => {
         modelId: "auto",
         name: "winwin · auto",
         protocol: "openai-chat",
+        contextWindow: 1_000_000,
         replaceInvalid: false,
         restartUncertain: false,
       }),
@@ -126,12 +131,12 @@ describe("New API connector", () => {
       "type",
       "text",
     );
-    await user.click(screen.getByRole("button", { name: "测试连接" }));
+    await user.click(screen.getByRole("button", { name: "再次测试" }));
     expect(await screen.findByText("调用已验证。")).toBeInTheDocument();
     expect(newApi.test).toHaveBeenCalledWith("owned-model");
   });
 
-  it("keeps the Codex client unavailable", async () => {
+  it("offers Codex candidates even when New API labels them openai", async () => {
     render(
       <NewApiDialog
         onClose={vi.fn()}
@@ -140,10 +145,16 @@ describe("New API connector", () => {
     );
     await screen.findByRole("option", { name: "chat-model" });
     const client = screen.getByLabelText("目前客户端");
-    expect(client.querySelector('option[value="codex"]')).toBeDisabled();
+    expect(client.querySelector('option[value="codex"]')).toBeEnabled();
+    await userEvent.selectOptions(client, "codex");
     expect(
-      screen.getByRole("option", { name: /Codex.*暂不支持/ }),
-    ).toBeDisabled();
+      screen.getByRole("option", { name: "responses-model" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "auto" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /^模型/ })).toHaveValue("auto");
+    expect(
+      screen.queryByRole("option", { name: "chat-model" }),
+    ).not.toBeInTheDocument();
   });
 
   it("lets an uncertain creation reconcile before the user explicitly opts into a new attempt", async () => {
@@ -224,10 +235,10 @@ describe("New API connector", () => {
     expect(newApi.importModel).not.toHaveBeenCalled();
   });
 
-  it("shows incompatible-version errors without offering login or creating anything", async () => {
+  it("shows unsupported OAuth contract errors without offering login or creating anything", async () => {
     vi.mocked(newApi.check).mockRejectedValue({
-      code: "unsupported_version",
-      message: "当前实例认证契约不兼容",
+      code: "oauth_contract",
+      message: "当前实例缺少可用的 OAuth 配置",
     });
     render(
       <NewApiDialog
@@ -236,7 +247,7 @@ describe("New API connector", () => {
       />,
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "当前实例认证契约不兼容",
+      "当前实例缺少可用的 OAuth 配置",
     );
     expect(
       screen.getByRole("button", { name: "钉钉 / Keycloak 登录" }),

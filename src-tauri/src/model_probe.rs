@@ -12,6 +12,8 @@ const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 pub struct ModelTestResult {
     pub message: String,
     pub elapsed_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_token: Option<String>,
 }
 
 /// Send exactly one "test" request without redirects, retries, login cookies or filesystem writes.
@@ -80,6 +82,7 @@ async fn test_with_timeout(model: &ModelConfig, timeout: Duration) -> AppResult<
     Ok(ModelTestResult {
         message: format!("测试通过，耗时{:.2} 秒", elapsed_ms as f64 / 1000.0),
         elapsed_ms,
+        verification_token: None,
     })
 }
 
@@ -120,7 +123,7 @@ fn validate_response(protocol: Protocol, value: &Value) -> AppResult<()> {
         }),
         Protocol::OpenaiResponses => {
             value["object"] == "response"
-                && matches!(value["status"].as_str(), Some("completed" | "incomplete"))
+                && value["status"] == "completed"
                 && value["output"].as_array().is_some_and(|output| {
                     output.iter().any(|item| {
                         item["type"] == "message"
@@ -163,6 +166,19 @@ mod tests {
         Mock, MockServer, ResponseTemplate,
     };
 
+    /// A partial or empty Responses envelope cannot authorize a saved Codex model.
+    #[test]
+    fn responses_require_completed_assistant_text() {
+        let reply = json!({"object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}]});
+        assert!(validate_response(Protocol::OpenaiResponses, &reply).is_ok());
+        let mut incomplete = reply.clone();
+        incomplete["status"] = json!("incomplete");
+        assert!(validate_response(Protocol::OpenaiResponses, &incomplete).is_err());
+        let mut empty = reply;
+        empty["output"][0]["content"][0]["text"] = json!("  ");
+        assert!(validate_response(Protocol::OpenaiResponses, &empty).is_err());
+    }
+
     /// Keep test requests confined to a local mock server with a clearly synthetic API key.
     fn fixture(base: &str, protocol: Protocol) -> ModelConfig {
         ModelConfig {
@@ -174,7 +190,7 @@ mod tests {
             api_key: "sk-TEST-ONLY".into(),
             supports_tool_call: true,
             supports_images: true,
-            context_window: None,
+            context_window: (protocol == Protocol::OpenaiResponses).then_some(128000),
             reasoning_levels: vec![],
         }
     }
@@ -285,6 +301,11 @@ mod tests {
         assert!(validate_response(
             Protocol::OpenaiResponses,
             &json!({"object":"response","status":"completed","output":[]})
+        )
+        .is_err());
+        assert!(validate_response(
+            Protocol::OpenaiResponses,
+            &json!({"object":"response","status":"incomplete","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial"}]}]})
         )
         .is_err());
         assert!(validate_response(

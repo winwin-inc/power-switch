@@ -224,6 +224,14 @@ pub async fn new_api_import(
     require_main(&window)?;
     let mut connector = state.lock().await;
     let prepared = connector.prepare_import(request).await?;
+    crate::model_probe::test_model(&prepared.model)
+        .await
+        .map_err(|message| {
+            Error::new(
+                "inference",
+                format!("{message}；模型未保存到模型库。密钥可能已创建，重试会复用已有密钥"),
+            )
+        })?;
     let model = engine
         .lock()
         .map_err(|_| Error::new("storage", "模型库已锁定，请重试"))?
@@ -237,7 +245,7 @@ pub async fn new_api_import(
     Ok(ImportResult {
         model,
         reused: prepared.reused,
-        message: "模型已保存，密钥访问已校验；实际模型调用尚未验证，尚未应用到 Agent。".into(),
+        message: "模型测试通过并已保存，尚未应用到 Agent。".into(),
     })
 }
 

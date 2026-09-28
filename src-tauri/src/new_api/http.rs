@@ -15,6 +15,7 @@ pub struct ApiClient {
     pub base: String,
     pub client: Client,
     jar: Arc<Jar>,
+    access_token: Option<String>,
 }
 
 impl ApiClient {
@@ -33,44 +34,67 @@ impl ApiClient {
             base: base.into(),
             client,
             jar,
+            access_token: None,
         })
     }
 
-    /// Restore only the New API session cookie, scoped to this exact HTTPS instance.
-    pub fn restore_cookie(&self, cookie: &str) -> Result<()> {
-        if !cookie.starts_with("session=") || cookie.contains(['\r', '\n', ';']) {
+    /// Restore one recognized login cookie with its original endpoint scope.
+    pub fn restore_cookie(&self, cookie: &str, name: &str, path: &str) -> Result<()> {
+        if !cookie.starts_with(&format!("{name}="))
+            || cookie.len() <= name.len() + 1
+            || cookie.contains(['\r', '\n', ';'])
+        {
             return Err(Error::new(
                 "keychain",
                 "已保存的登录会话格式无效，请重新登录",
             ));
         }
         let url = Url::parse(&self.base).map_err(|_| Error::new("url", "实例地址无效"))?;
+        let secure = if url.scheme() == "https" {
+            "; Secure"
+        } else {
+            ""
+        };
         self.jar
-            .add_cookie_str(&format!("{cookie}; Path=/; Secure; HttpOnly"), &url);
+            .add_cookie_str(&format!("{cookie}; Path={path}{secure}; HttpOnly"), &url);
         Ok(())
     }
 
-    /// Export only the instance's session cookie to the system credential store.
-    pub fn session_cookie(&self) -> Result<String> {
-        let url = Url::parse(&self.base).map_err(|_| Error::new("url", "实例地址无效"))?;
+    /// Export only the named cookie at the path where the server sends it.
+    pub fn session_cookie(&self, name: &str, path: &str) -> Result<String> {
+        let url = Url::parse(&format!("{}{path}", self.base))
+            .map_err(|_| Error::new("url", "实例地址无效"))?;
         self.jar
             .cookies(&url)
             .and_then(|h| h.to_str().ok().map(str::to_owned))
             .and_then(|s| {
                 s.split(';')
                     .map(str::trim)
-                    .find(|s| s.starts_with("session="))
+                    .find(|s| s.starts_with(&format!("{name}=")))
                     .map(str::to_owned)
             })
             .ok_or_else(|| Error::new("login_required", "服务端未返回登录会话，请重新登录"))
     }
 
-    /// Attach the legacy user header only to this instance's management endpoints.
+    /// Update the dashboard bearer used only for management endpoints.
+    pub fn set_access_token(&mut self, token: String) {
+        self.access_token = Some(token);
+    }
+
+    /// Read the dashboard token only when serializing the private keychain record.
+    pub fn access_token(&self) -> Option<&str> {
+        self.access_token.as_deref()
+    }
+
+    /// Attach the detected dashboard credential only to this instance's management endpoints.
     pub fn management(&self, method: Method, path: &str, user_id: Option<i64>) -> RequestBuilder {
         let request = self.client.request(method, format!("{}{path}", self.base));
-        match user_id {
-            Some(id) => request.header("New-Api-User", id),
-            None => request,
+        if let Some(token) = &self.access_token {
+            request.bearer_auth(token)
+        } else if let Some(id) = user_id {
+            request.header("New-Api-User", id)
+        } else {
+            request
         }
     }
 
@@ -101,6 +125,8 @@ pub async fn read_json(request: RequestBuilder) -> Result<Value> {
                 "forbidden",
                 "请求被拒绝，请检查账号权限、模型权限或 IP 限制",
             ),
+            404 => ("not_found", "接口不存在，请检查实例地址或接口能力"),
+            405 => ("method_not_allowed", "接口不支持该请求方法"),
             429 => ("rate_limit", "请求过于频繁，请稍后重试"),
             300..=399 => ("redirect", "接口发生重定向，请填写最终的 HTTPS 实例地址"),
             _ => ("http", "服务端请求失败，请稍后重试或检查服务状态"),

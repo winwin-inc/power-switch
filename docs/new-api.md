@@ -1,15 +1,15 @@
 # New API 接入
 
-power-switch 内置 New API 接入模块。首版适配 `v1.0.0-rc.21` 的 Cookie 会话认证与自定义 OAuth，默认地址为 `https://new-api.banmahui.cn`。无需修改 New API 或 Keycloak 服务端。
+power-switch 内置 New API 接入模块，默认地址为 `https://new-api.banmahui.cn`。连接器按 OAuth 接口响应选择 Cookie 会话或 Bearer／刷新 Cookie 流程，版本号只用于显示，不作为兼容性开关。无需修改 New API 或 Keycloak 服务端。
 
 ## 使用
 
 1. 可先点击应用顶栏的 **新手指引**，通过三步动画了解申请密钥、模型入库和应用到 Agent 的流程。随后在模型库点击橙色 **从 New API 添加**。实例地址应为 HTTPS 根地址，不包含 `/v1`，且与 New API 的 `ServerAddress` 一致。
 2. 点击 **钉钉 / Keycloak 登录**，在独立窗口完成授权。应用不会读取或保存钉钉密码。
-3. 选择目前客户端、平台名称和模型。接口固定使用 `default` 分组，无需在页面选择。列表只显示该分组可用且服务端声明支持对应协议的模型，默认优先选中 `auto`；没有兼容的 `auto` 时选择第一个可用模型。平台名称默认为 `winwin`，可自行修改，切换模型时保留。
+3. 选择目前客户端、平台名称和模型。接口固定使用 `default` 分组，无需在页面选择。列表只显示该分组可用的模型，并按服务端元数据筛选；对 Codex，`openai` 模型也会作为 Responses 候选，是否真正兼容由保存前的调用确认。默认优先选中 `auto`；没有兼容的 `auto` 时选择第一个可用模型。平台名称默认为 `winwin`，可自行修改，切换模型时保留。
 4. 按上游实际能力设置图像、工具调用和推理档位，不能从模型别名推断。
-5. 点击 **创建并添加**。同一实例、同一账号创建或复用一把 power-switch 专属密钥，不设置模型限制；首次创建使用 `default` 分组决定密钥的实际访问范围。应用会校验所选模型是否可访问，再保存模型。
-6. 可主动显示或复制密钥。**测试连接** 会发送一次最多请求 64 个输出 Token 的模型调用，可能消耗账户额度；保存和模型列表校验不发送推理请求。测试仅确认所选协议收到有效响应，不证明工具调用、图像或上下文能力。
+5. 点击 **创建并添加**。同一实例、同一账号创建或复用一把 power-switch 专属密钥，不设置模型限制；首次创建使用 `default` 分组决定密钥的实际访问范围。应用先检查所选模型是否可访问，再发送一次模型调用；只有收到所选协议的有效文本回复才保存到模型库。调用可能消耗账户额度；失败时密钥可能已创建，重试会复用。
+6. 可主动显示或复制密钥。保存后按需点击 **测试连接** 可再次调用模型；测试只确认基本文本调用及响应格式，不证明工具调用、图像、流式或上下文能力。应用到 Agent 时只预览并写入配置，不重复调用模型。
 7. 返回模型库，模型名称展示为“平台名称 · 模型 ID”（例如 `winwin · auto`），接口调用仍使用原始模型 ID。使用原有 **应用到 Agent → 预览 → 确认覆盖并备份** 流程。
 
 新建密钥在 New API 控制台中的名称为 **OAuth 同步的用户显示名拼音 + `-ps`**，例如“赵斌”对应 `zhaobin-ps`。英文姓名转为小写并去掉空格；显示名无法转换时使用用户名，仍不可用时使用用户 ID。拼音由本机 [pinyin](https://docs.rs/pinyin/0.11.0/pinyin/) 字典转换，不发送姓名到额外服务。旧版按模型受限的密钥保留在服务端；首次继续导入时创建新的账号共享密钥，不自动撤销旧密钥。
@@ -18,25 +18,26 @@ power-switch 内置 New API 接入模块。首版适配 `v1.0.0-rc.21` 的 Cooki
 
 ## 协议和接口
 
-| New API 元数据 | power-switch 协议    | 客户端      | API 基础地址      |
-| -------------- | -------------------- | ----------- | ----------------- |
-| `openai`       | `openai-chat`        | WorkBuddy   | `https://实例/v1` |
-| `anthropic`    | `anthropic-messages` | Claude Code | `https://实例`    |
+| New API 元数据    | power-switch 协议                      | 客户端           | API 基础地址      |
+| ----------------- | -------------------------------------- | ---------------- | ----------------- |
+| `openai`          | `openai-chat`、`openai-responses` 候选 | WorkBuddy、Codex | `https://实例/v1` |
+| `anthropic`       | `anthropic-messages`                   | Claude Code      | `https://实例`    |
+| `openai-response` | `openai-responses`                     | Codex            | `https://实例/v1` |
 
-Codex 与 OpenAI Responses 暂不支持。之前保存的 `openai-responses` 配置仍会保留并显示为不可用，不能从界面重新选择或应用。
+Codex 只接受 OpenAI Responses。当前 New API 实例的 `/api/pricing` 对 `auto` 仅声明 `openai` 和 `anthropic`，即使它实际支持 Responses，也不会声明 `openai-response`。因此 `openai` 会使模型出现在 Codex 候选列表，但不会直接认定为可用：专属密钥的 `/v1/models` 清单须包含所选模型，且 `/v1/responses` 必须返回已完成的非空助手文本，才会保存到模型库。导入时还需填写实际上下文窗口。应用后在用户级 `config.toml` 中生成自定义供应商和模型目录，保留其他配置与 `auth.json`。
 
-登录时，Rust 使用新的 Cookie 容器请求 `/api/oauth/state`，在隔离 WebView 中打开提供方授权地址，保留 New API 原始回调 `/oauth/{provider}`。原生导航处理器校验回调来源、路径及唯一 `state`，截获授权码并阻止网页再次兑换，由同一 Rust HTTP 会话请求 `/api/oauth/{provider}`。Client Secret 和 Keycloak Token 始终由 New API 服务端处理。
+登录时，Rust 使用隔离 HTTP 会话先尝试 `POST /api/oauth/state`（提供方和 `login` 意图）；仅在 404／405 时尝试旧版 `GET`。它分别读取 `flow_token` 或字符串 state，在隔离 WebView 中打开提供方授权地址，并保留 New API 原始回调 `/oauth/{provider}`。原生导航处理器校验回调来源、路径及唯一 state，截获授权码并阻止网页再次兑换，由同一 Rust HTTP 会话请求 `/api/oauth/{provider}`。Client Secret 和 Keycloak Token 始终由 New API 服务端处理。
 
-管理请求使用 New API 会话和 `New-Api-User`，不把模型调用密钥当作管理令牌，也不调用会覆盖现有系统访问令牌的 `/api/user/token`。
+旧流程的管理请求使用 Cookie 与 `New-Api-User`；新流程使用 OAuth 回调返回的短期 Bearer 令牌，并按需通过刷新 Cookie 续期。管理凭证不会发往模型调用接口，也不调用会覆盖现有系统访问令牌的 `/api/user/token`。
 
 使用的管理接口：`/api/status`、`/api/user/self`、`/api/user/self/groups`、`/api/user/models?group=…`、`/api/pricing`、`POST /api/token/`、`GET /api/token/search`、`POST /api/token/{id}/key`。完整 API Key 通过专用接口取得，不使用令牌列表中的脱敏值。`GET /v1/models` 验证模型密钥访问。
 
-`v1.0.0-rc.21` 的完整密钥接口返回原始的 48 位字母数字串，应用校验完整性后补齐一次 `sk-` 前缀。参考固定版本的 [令牌接口](https://github.com/QuantumNous/new-api/blob/v1.0.0-rc.21/controller/token.go)、[密钥生成](https://github.com/QuantumNous/new-api/blob/v1.0.0-rc.21/common/utils.go) 和 [OAuth 实现](https://github.com/QuantumNous/new-api/blob/v1.0.0-rc.21/controller/oauth.go)。
+应用把完整密钥视为不透明字符串，拒绝空值、脱敏值和控制字符。先用服务端原样返回的密钥读取 `/v1/models`；只有鉴权失败且密钥不带 `sk-` 时才尝试补一次前缀。校验通过后才写入模型库。[rc.21 OAuth](https://github.com/QuantumNous/new-api/blob/v1.0.0-rc.21/controller/oauth.go) 与 [rc.40 OAuth](https://github.com/QuantumNous/new-api/blob/v1.0.0-rc.40/controller/oauth.go) 的差异由认证流程处理，不再靠版本字符串判断。
 
 ## 存储与恢复
 
-- macOS 登录会话只保存在系统钥匙串的 `com.powerswitch.desktop.new-api` 服务内，按实例地址隔离；Windows 使用系统凭证存储。其他平台暂不支持持久登录，绝不降级为明文会话文件。
-- 当前版本会话最长保留 30 天，启动恢复时核对身份，后续请求也由服务器鉴权；会话到期后重新登录。已创建的模型密钥独立有效。
+- macOS 登录会话只保存在系统钥匙串的 `com.powerswitch.desktop.new-api` 服务内，按实例地址隔离；Windows 使用系统凭证存储。其他平台暂不支持持久登录，绝不降级为明文会话文件。旧 Cookie 记录在验证身份后迁移到新存储格式，不按其中的版本号拒绝。
+- 本机会话最长保留 30 天；新流程也受服务端会话到期时间约束。启动恢复时核对身份，Bearer 临近到期时使用仅限 `/api/user/auth` 路径的刷新 Cookie 续期。会话失效后重新登录，已创建的模型密钥独立有效。
 - API Key 沿用 `models.json` 的本机私有存储。管理会话、授权码和完整远端响应不写日志、分享链接或错误提示。
 - `new-api.json` 只保存账号 ID、实例、首次创建分组、令牌名称与 ID、创建前同名令牌的 ID，以及每个关联模型的模型 ID、协议和稳定本地 ID。Unix 文件权限为 `0600`。**请保留此文件**，它负责识别已有密钥并恢复未完成操作。
 - 同一用户的不同令牌允许使用相同的姓名拼音名称。创建前记录已存在的同名令牌 ID，再写入 `submitted` 记录；恢复时排除旧 ID，核对账号、首次分组及无限制设置，已有绑定按令牌 ID 识别。旧版恢复记录可读，升级后保留为迁移来源。
@@ -58,7 +59,7 @@ pnpm tauri build --bundles app
 
 OAuth 的原生窗口需要在 macOS 上完成一次真实钉钉授权验收：检查扫码显示、授权返回、模型读取、创建与复用、显示／复制密钥、一次实际模型测试及应用预览。若身份提供方禁止嵌入式窗口，应保留错误现场并另行适配系统浏览器回调；不会自动转为读取其他浏览器的 Cookie。
 
-其他版本的 New API 可能采用 JWT/Refresh Token 认证。首版检测到不同版本会提示不兼容，不自动升级服务端、修改 Keycloak、执行 SQL 或套用不兼容接口。
+连接检查不再因版本号不同而拦截。未知的 state、登录、刷新、模型协议或密钥响应会在对应步骤明确报错并停止；OAuth 后若实例要求站内二次验证，当前自动接入会提示后停止。不会自动升级服务端、修改 Keycloak、执行 SQL 或猜测不兼容的接口。版本无关不等于完全不依赖管理接口契约，未来接口行为变化时仍需针对该环节适配。
 
 ## 本轮交付验证（2026-09-22）
 
@@ -69,4 +70,4 @@ OAuth 的原生窗口需要在 macOS 上完成一次真实钉钉授权验收：�
 
 ## 当前支持范围
 
-v0.1.4 支持 WorkBuddy 和 Claude Code。Codex 客户端与 OpenAI Responses 协议入口已禁用；配置页面中的 Codex 设置不可编辑。
+WorkBuddy 支持 OpenAI Chat，Claude Code 支持 Anthropic Messages，Codex 支持 OpenAI Responses。New API 导入前必须通过所选协议的实际文本调用；现有模型不会因本次改动自动重测，编辑后重新保存需要再次测试。
