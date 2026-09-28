@@ -4,13 +4,19 @@ import packageJson from "../../package.json";
 import App from "../App";
 import { newModel } from "../types";
 
-const { checkForUpdate, installPendingUpdate, restartUpdatedApp, apiData } =
-  vi.hoisted(() => ({
-    checkForUpdate: vi.fn(),
-    installPendingUpdate: vi.fn(),
-    restartUpdatedApp: vi.fn(),
-    apiData: vi.fn(),
-  }));
+const {
+  checkForUpdate,
+  installPendingUpdate,
+  restartUpdatedApp,
+  apiData,
+  apiSettings,
+} = vi.hoisted(() => ({
+  checkForUpdate: vi.fn(),
+  installPendingUpdate: vi.fn(),
+  restartUpdatedApp: vi.fn(),
+  apiData: vi.fn(),
+  apiSettings: vi.fn(),
+}));
 
 vi.mock("../updater", () => ({
   checkForUpdate,
@@ -20,7 +26,7 @@ vi.mock("../updater", () => ({
 
 vi.mock("../api", () => ({
   isDesktop: true,
-  api: { data: apiData },
+  api: { data: apiData, settings: apiSettings },
 }));
 
 const sampleData = {
@@ -30,6 +36,8 @@ const sampleData = {
     workbuddyPath: null,
     claudePath: null,
     codexDir: null,
+    autoUpdate: true,
+    receiveRc: false,
   },
   agents: [],
   dataDir: "/test/app",
@@ -40,13 +48,16 @@ describe("sidebar app updates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiData.mockResolvedValue(structuredClone(sampleData));
+    apiSettings.mockResolvedValue(undefined);
     checkForUpdate.mockResolvedValue({
       version: "0.1.7",
       notes: "This release note must not appear in the confirmation.",
     });
-    installPendingUpdate.mockImplementation(async (reportProgress) => {
-      reportProgress(64);
-    });
+    installPendingUpdate.mockImplementation(
+      async (_version, reportProgress) => {
+        reportProgress(64);
+      },
+    );
     restartUpdatedApp.mockResolvedValue(undefined);
   });
 
@@ -79,7 +90,10 @@ describe("sidebar app updates", () => {
     fireEvent.click(updateIcon);
     fireEvent.click(await screen.findByRole("button", { name: "确认更新" }));
     await waitFor(() =>
-      expect(installPendingUpdate).toHaveBeenCalledWith(expect.any(Function)),
+      expect(installPendingUpdate).toHaveBeenCalledWith(
+        "0.1.7",
+        expect.any(Function),
+      ),
     );
     const restartButton = await screen.findByRole("button", {
       name: /更新完成，重启应用/,
@@ -100,5 +114,48 @@ describe("sidebar app updates", () => {
     expect(container.querySelector(".version-update-trigger")).toBeNull();
     expect(container.querySelector(".update-control")).toBeNull();
     expect(screen.queryByText("检查更新")).not.toBeInTheDocument();
+  });
+
+  it("skips startup checks when automatic updates are off but permits a manual check", async () => {
+    apiData.mockResolvedValue({
+      ...structuredClone(sampleData),
+      settings: { ...sampleData.settings, autoUpdate: false },
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    expect(screen.getByRole("switch", { name: "测试计划" })).toBeDisabled();
+    await new Promise((resolve) => setTimeout(resolve, 1900));
+    expect(checkForUpdate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledOnce());
+    expect(installPendingUpdate).not.toHaveBeenCalled();
+  });
+
+  it("saves RC opt-in only while automatic checks are enabled", async () => {
+    let saved = structuredClone(sampleData);
+    apiData.mockImplementation(async () => structuredClone(saved));
+    apiSettings.mockImplementation(async (settings) => {
+      saved = { ...saved, settings: structuredClone(settings) };
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    const rcSwitch = screen.getByRole("switch", { name: "测试计划" });
+    expect(rcSwitch).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(rcSwitch);
+    await waitFor(() =>
+      expect(rcSwitch).toHaveAttribute("aria-checked", "true"),
+    );
+    expect(apiSettings).toHaveBeenLastCalledWith({
+      ...sampleData.settings,
+      receiveRc: true,
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "自动更新" }));
+    await waitFor(() => expect(rcSwitch).toBeDisabled());
+    expect(rcSwitch).toHaveAttribute("aria-checked", "false");
+    expect(apiSettings).toHaveBeenLastCalledWith({
+      ...sampleData.settings,
+      autoUpdate: false,
+      receiveRc: false,
+    });
   });
 });

@@ -1433,6 +1433,62 @@ textarea {
 .theme-options button svg:last-child:not(:first-child) {
   margin-left: auto;
 }
+.update-section-title {
+  align-items: center;
+}
+.update-section-title > .button {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.update-preference-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 17px 0;
+  border-top: 1px solid var(--border);
+}
+.update-preference-row strong {
+  font-size: 12px;
+}
+.update-preference-row p,
+.update-error-text {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.settings-switch {
+  width: 40px;
+  height: 24px;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 150ms ease;
+}
+.settings-switch span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 150ms ease;
+}
+.settings-switch[aria-checked="true"] {
+  background: #18a66a;
+}
+.settings-switch[aria-checked="true"] span {
+  transform: translateX(16px);
+}
+.settings-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.update-available-button {
+  margin-top: 10px;
+}
 .path-field {
   margin-bottom: 23px;
 }
@@ -1747,6 +1803,12 @@ textarea {
   }
   .settings-section {
     padding: 19px;
+  }
+  .update-section-title {
+    flex-wrap: wrap;
+  }
+  .update-section-title > .button {
+    margin-left: 31px;
   }
   .backup-row {
     padding: 16px;

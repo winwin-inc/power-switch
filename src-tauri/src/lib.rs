@@ -14,6 +14,8 @@ pub mod paths;
 pub mod skills;
 #[cfg(feature = "desktop")]
 mod skills_desktop;
+#[cfg(feature = "desktop")]
+mod update_desktop;
 mod workbuddy_link;
 #[cfg(feature = "desktop")]
 pub use desktop::run;

@@ -113,7 +113,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNoticeState] = useState<Notice>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
-  const updateRequest = useRef(false);
+  const updateCheckRevision = useRef(0);
+  const updateInstallation = useRef(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeRevision = useRef(0);
   const [modelTests, setModelTests] = useState<Record<string, ModelTestState>>(
@@ -147,38 +148,50 @@ export default function App() {
   const refresh = useCallback(async () => {
     setData(await api.data());
   }, []);
+  /** Ignore older checks when a manual retry or saved channel change starts a newer one. */
+  const requestUpdateCheck = useCallback(
+    (manual = false) => {
+      if (updateInstallation.current) return;
+      const revision = ++updateCheckRevision.current;
+      setUpdateState({ kind: "checking" });
+      void checkForUpdate()
+        .then((update) => {
+          if (revision !== updateCheckRevision.current) return;
+          setUpdateState(
+            update
+              ? { kind: "available", version: update.version }
+              : { kind: "idle" },
+          );
+          if (manual && !update)
+            setNotice({ kind: "success", text: "当前更新通道已是最新版本。" });
+        })
+        .catch((error) => {
+          if (revision !== updateCheckRevision.current) return;
+          setUpdateState({ kind: "error", message: String(error) });
+          if (manual) setNotice({ kind: "error", text: String(error) });
+        });
+    },
+    [setNotice],
+  );
   useEffect(() => {
     void refresh().catch((e) => setNotice({ kind: "error", text: String(e) }));
   }, [refresh, setNotice]);
   useEffect(() => {
-    if (!isDesktop) return;
-    let canceled = false;
+    if (!isDesktop || !data) return;
+    if (updateInstallation.current) return;
+    updateCheckRevision.current += 1;
+    setUpdateState({ kind: "idle" });
+    if (!data.settings.autoUpdate) {
+      return;
+    }
     const timer = setTimeout(() => {
-      if (canceled || updateRequest.current) return;
-      updateRequest.current = true;
-      setUpdateState({ kind: "checking" });
-      void checkForUpdate()
-        .then((update) => {
-          if (!canceled)
-            setUpdateState(
-              update
-                ? { kind: "available", version: update.version }
-                : { kind: "idle" },
-            );
-        })
-        .catch(() => {
-          if (!canceled)
-            setUpdateState({ kind: "error", message: "检查失败，点击重试" });
-        })
-        .finally(() => {
-          updateRequest.current = false;
-        });
+      requestUpdateCheck();
     }, 1800);
     return () => {
-      canceled = true;
+      updateCheckRevision.current += 1;
       clearTimeout(timer);
     };
-  }, []);
+  }, [data?.settings.autoUpdate, data?.settings.receiveRc, requestUpdateCheck]);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     /** Apply explicit appearance or react to OS appearance changes. */
@@ -260,35 +273,23 @@ export default function App() {
   /** Start installing only after the user confirms the available release. */
   function beginUpdateInstall() {
     if (updateState.kind !== "available") return;
+    const version = updateState.version;
+    updateInstallation.current = true;
+    updateCheckRevision.current += 1;
     setModal(null);
     setUpdateState({ kind: "installing", percentage: 0 });
-    void installPendingUpdate((percentage) =>
+    void installPendingUpdate(version, (percentage) =>
       setUpdateState({ kind: "installing", percentage }),
     )
       .then(() => setUpdateState({ kind: "ready" }))
-      .catch((error) =>
-        setUpdateState({ kind: "error", message: String(error) }),
-      );
+      .catch((error) => {
+        updateInstallation.current = false;
+        setUpdateState({ kind: "error", message: String(error) });
+      });
   }
   /** Retry the automatic update check from its compact version-row error icon. */
   function retryUpdateCheck() {
-    if (updateRequest.current) return;
-    updateRequest.current = true;
-    setUpdateState({ kind: "checking" });
-    void checkForUpdate()
-      .then((update) =>
-        setUpdateState(
-          update
-            ? { kind: "available", version: update.version }
-            : { kind: "idle" },
-        ),
-      )
-      .catch((error) =>
-        setUpdateState({ kind: "error", message: String(error) }),
-      )
-      .finally(() => {
-        updateRequest.current = false;
-      });
+    requestUpdateCheck(true);
   }
   /** Discard staged native contents when the user cancels either kind of preview. */
   function closeModal() {
@@ -1007,6 +1008,22 @@ export default function App() {
                       setNotice({ kind: "success", text: "设置已保存。" });
                     })
                   }
+                  onUpdateSave={(preferences) =>
+                    void run(async () => {
+                      await api.settings({ ...data.settings, ...preferences });
+                      await refresh();
+                      setNotice({ kind: "success", text: "更新设置已保存。" });
+                    })
+                  }
+                  onCheckUpdate={() => requestUpdateCheck(true)}
+                  updateState={updateState}
+                  onShowUpdate={() => {
+                    if (updateState.kind === "available")
+                      setModal({
+                        kind: "update-confirm",
+                        version: updateState.version,
+                      });
+                  }}
                 />
               )}
             </>
@@ -1504,11 +1521,21 @@ function SettingsPage({
   busy,
   onThemeSave,
   onSave,
+  onUpdateSave,
+  onCheckUpdate,
+  updateState,
+  onShowUpdate,
 }: {
   data: AppData;
   busy: boolean;
   onThemeSave: (theme: Settings["theme"]) => void;
   onSave: (settings: Settings) => void;
+  onUpdateSave: (
+    preferences: Pick<Settings, "autoUpdate" | "receiveRc">,
+  ) => void;
+  onCheckUpdate: () => void;
+  updateState: UpdateState;
+  onShowUpdate: () => void;
 }) {
   const [settings, setSettings] = useState(data.settings);
   const [pickerError, setPickerError] = useState("");
@@ -1545,7 +1572,11 @@ function SettingsPage({
   /** Save all settings together so path validation is atomic on the backend. */
   function submit(event: FormEvent) {
     event.preventDefault();
-    onSave(settings);
+    onSave({
+      ...settings,
+      autoUpdate: data.settings.autoUpdate,
+      receiveRc: data.settings.receiveRc,
+    });
   }
   return (
     <form className="settings-form" onSubmit={submit}>
@@ -1583,6 +1614,98 @@ function SettingsPage({
             </button>
           ))}
         </div>
+      </section>
+      <section className="settings-section">
+        <div className="section-title update-section-title">
+          <RotateCw size={19} />
+          <div>
+            <h2>软件更新</h2>
+            <p>检查更新只获取版本信息；下载安装始终需要你确认。</p>
+          </div>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={
+              busy ||
+              !isDesktop ||
+              updateState.kind === "checking" ||
+              updateState.kind === "installing" ||
+              updateState.kind === "ready"
+            }
+            onClick={onCheckUpdate}
+          >
+            {updateState.kind === "checking" ? "正在检查" : "检查更新"}
+          </button>
+        </div>
+        <div className="update-preference-row">
+          <div>
+            <strong>自动更新</strong>
+            <p>启动时自动检查新版本，不会自动下载。</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-label="自动更新"
+            aria-checked={data.settings.autoUpdate}
+            className="settings-switch"
+            disabled={
+              busy ||
+              updateState.kind === "installing" ||
+              updateState.kind === "ready"
+            }
+            onClick={() =>
+              onUpdateSave({
+                autoUpdate: !data.settings.autoUpdate,
+                receiveRc: data.settings.autoUpdate
+                  ? false
+                  : data.settings.receiveRc,
+              })
+            }
+          >
+            <span />
+          </button>
+        </div>
+        <div className="update-preference-row">
+          <div>
+            <strong>测试计划</strong>
+            <p>开启后接收 RC 版本；关闭后只接收正式版。</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-label="测试计划"
+            aria-checked={data.settings.receiveRc}
+            className="settings-switch"
+            disabled={
+              busy ||
+              !data.settings.autoUpdate ||
+              updateState.kind === "installing" ||
+              updateState.kind === "ready"
+            }
+            onClick={() =>
+              onUpdateSave({
+                autoUpdate: true,
+                receiveRc: !data.settings.receiveRc,
+              })
+            }
+          >
+            <span />
+          </button>
+        </div>
+        {updateState.kind === "available" && (
+          <button
+            type="button"
+            className="button secondary update-available-button"
+            onClick={onShowUpdate}
+          >
+            发现 v{updateState.version}，查看更新
+          </button>
+        )}
+        {updateState.kind === "error" && (
+          <p role="status" className="update-error-text">
+            {updateState.message}
+          </p>
+        )}
       </section>
       <section className="settings-section">
         <div className="section-title">

@@ -102,7 +102,7 @@ WorkBuddy 的新任务页面支持打开，但深链不能可靠地替你选择�
 
 ### 如何获取其他平台安装包？
 
-应用启动后会检查新版本；发现更新时，点击左下角版本号下方的提示即可安装，完成后按提示重启。macOS DMG、Windows MSI 和 Linux AppImage 支持应用内更新；其他安装包可前往 [Releases](https://github.com/winwin-inc/power-switch/releases) 手动下载。`SHA256SUMS` 可用于核对文件完整性。
+默认在启动后检查正式版更新；在「设置 → 软件更新」中可关闭自动检查，或启用「测试计划」接收 RC 版本。关闭自动检查后仍可手动检查，但「测试计划」不可选。发现更新后，需点击确认才会下载和安装；完成后按提示重启。macOS DMG、Windows MSI 和 Linux AppImage 支持应用内更新；其他安装包可前往 [Releases](https://github.com/winwin-inc/power-switch/releases) 手动下载。`SHA256SUMS` 可用于核对文件完整性。
 
 ### 为什么某个 Codex 模型不能添加？
 
