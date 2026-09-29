@@ -364,10 +364,10 @@ export default function App() {
         .includes(query.toLowerCase()),
   );
   const titles = {
-    models: ["模型库", "把合适的模型，交给合适的 Agent。"],
-    backups: ["模型配置备份", "每一次切换，都留有回去的路。"],
-    settings: ["设置", "让配置找到正确的位置。"],
-    skills: ["技能", "全局安装，为每个 Agent 连接合适的技能。"],
+    models: "模型库",
+    backups: "模型配置备份",
+    settings: "设置",
+    skills: "技能",
   };
 
   return (
@@ -510,7 +510,7 @@ export default function App() {
       </aside>
       <main className="main">
         <div className="topbar">
-          <span>{titles[page][0]}</span>
+          <span>{titles[page]}</span>
           <div className="topbar-actions">
             {!isDesktop && (
               <span className="environment demo">
@@ -529,10 +529,7 @@ export default function App() {
         </div>
         <div className="page-content">
           <header className="page-header">
-            <div>
-              <h1>{titles[page][0]}</h1>
-              <p>{titles[page][1]}</p>
-            </div>
+            <h1>{titles[page]}</h1>
             {page === "models" && (
               <div className="header-actions">
                 <button
@@ -1046,7 +1043,12 @@ export default function App() {
         />
       )}
       {modal?.kind === "new-api" && (
-        <NewApiDialog onClose={closeModal} onAdded={refresh} />
+        <NewApiDialog
+          onClose={closeModal}
+          onAdded={refresh}
+          onPreferenceSaved={refresh}
+          savedBaseUrl={data?.settings.newApiUrl}
+        />
       )}
       {modal?.kind === "update-confirm" && updateState.kind === "available" && (
         <Modal
@@ -1695,7 +1697,7 @@ function SettingsPage({
           <ShieldCheck size={19} />
           <div>
             <h2>本地数据</h2>
-            <p>模型与 API Key 保存在本机 JSON 文件中，备份包含原始配置。</p>
+            <p>模型、API Key、New API 会话和备份均以明文保存在此目录。</p>
           </div>
         </div>
         <code>{data.dataDir}</code>

@@ -156,6 +156,11 @@ fn delete_model(state: Shared<'_>, id: String) -> AppResult<()> {
 fn save_settings(state: Shared<'_>, settings: Settings) -> AppResult<()> {
     with_engine(state, |e| e.settings(settings))
 }
+/// Update only the last checked New API address, keeping other settings intact.
+#[tauri::command]
+fn save_new_api_url(state: Shared<'_>, url: String) -> AppResult<()> {
+    with_engine(state, |e| e.new_api_url(url))
+}
 /// Prepare a model application for user review.
 #[tauri::command]
 fn preview_apply(
@@ -287,8 +292,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let paths = Paths::discover().map_err(std::io::Error::other)?;
-            crate::new_api_desktop::setup(app.handle(), paths.data.clone());
+            let data = paths.data.clone();
             let engine = Engine::open(paths).map_err(std::io::Error::other)?;
+            crate::new_api_desktop::setup(app.handle(), data);
             app.manage(Mutex::new(engine));
             app.manage(Mutex::new(VerifiedModels::default()));
             app.manage(Mutex::new(crate::skills::SkillManager::default()));
@@ -316,6 +322,7 @@ pub fn run() {
             list_models,
             delete_model,
             save_settings,
+            save_new_api_url,
             preview_apply,
             apply_preview,
             cancel_preview,

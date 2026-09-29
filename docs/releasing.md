@@ -40,7 +40,7 @@ Store 版与 GitHub MSI/ZIP 版是两个分发渠道。Store 版使用 MSIX，�
 
 这些是公开包标识，不是签名私钥。Store 工作流在缺少任何值或使用 RC 标签时提前失败。仅在正式版标签已进入 `master` 历史后，手动运行 Actions 中的 **Microsoft Store MSIX**，输入例如 `v0.1.6`。工作流执行现有质量检查，分别产出 x64、ARM64 的 `store-windows-*` 工件。`MakeAppx` 生成的包未签名，只供 Partner Center 提交。应用版本 `0.1.6` 映射为 Store 包版本 `1.1.6.0`；映射固定为 `(major + 1).minor.patch.0`，确保 Store 要求的首段非零、末段为零，并保持跨版本递增。
 
-上传前检查两个包的清单身份与架构，使用 Windows App Certification Kit 检验。在 Partner Center 审核和重新签名完成后，通过 **Microsoft Store 页面**安装到干净的 Windows 11 x64、ARM64 机器，测试启动、模型添加与应用、`power-switch://` 导入、本地数据和商店升级。商店版不会检查或安装 GitHub MSI；设置中会显示商店更新说明。现有 GitHub 安装用户改装商店版时，还要核对模型与密钥能否从原 AppData 路径读取，因为 MSIX 可能虚拟化新建文件。确认产品页可用后再把 README 的 Windows 首选入口改为商店链接。
+上传前检查两个包的清单身份与架构，使用 Windows App Certification Kit 检验。在 Partner Center 审核和重新签名完成后，通过 **Microsoft Store 页面**安装到干净的 Windows 11 x64、ARM64 机器，测试启动、模型添加与应用、`power-switch://` 导入、本地数据和商店升级。商店版不会检查或安装 GitHub MSI；设置中会显示商店更新说明。现有 GitHub 安装用户改装商店版时，应确认模型与密钥从 `%USERPROFILE%\.power-switch` 读取；旧 AppData 目录不会被读取或迁移。还应在 MSIX 包中实测新目录的写入与 ACL，因为 MSIX 可能虚拟化新建文件。确认产品页可用后再把 README 的 Windows 首选入口改为商店链接。
 
 维护者本机需要 Git SSH 推送权限。查看私有仓库 Actions、修改默认分支及管理 Release 时，还需 GitHub CLI 登录：
 
@@ -54,7 +54,7 @@ gh repo edit winwin-inc/power-switch --default-branch master
 
 CI 使用 Node.js 22、pnpm 10.18.3、Rust 1.92.0。前端依赖采用 `--frozen-lockfile`，Rust 检查、测试和发布构建采用 `--locked`。
 
-Windows Installer 只比较 MSI `ProductVersion` 的前三段，[第四段不参与升级比较](https://learn.microsoft.com/en-us/windows/win32/msi/productversion)。已发布的 `v0.1.6-rc.4` 安装包设置为 `0.1.6.4`，因此正式版 `v0.1.6` 的 WiX 版本使用 `0.1.7.0`，确保 MSI 升级序列实际递增；应用本身仍显示 `0.1.6`。后续 Windows 版本必须使前三段高于 `0.1.7`，不能只增加第四段。发布前应在 Windows 上验证从上一版 MSI 升级。
+Windows Installer 只比较 MSI `ProductVersion` 的前三段，[第四段不参与升级比较](https://learn.microsoft.com/en-us/windows/win32/msi/productversion)。已发布的 `v0.1.6-rc.4` 安装包设置为 `0.1.6.4`，正式版 `v0.1.6` 使用 `0.1.7.0`；`v0.1.7` 的 WiX 版本使用 `0.1.8.0`，确保 MSI 升级序列实际递增，应用本身仍显示 `0.1.7`。后续 Windows 版本必须使前三段高于 `0.1.8`，不能只增加第四段。发布前应在 Windows 上验证从上一版 MSI 升级。
 
 ## 准备一个版本
 
@@ -151,9 +151,10 @@ shasum -a 256 -c SHA256SUMS
 Windows 可执行 `Get-FileHash .\power-switch-v0.1.0-windows-x64.msi -Algorithm SHA256`，将结果与 `SHA256SUMS` 同名记录比较。
 
 - macOS DMG 和 ZIP 中的应用均为通用二进制，构建时通过 `lipo` 校验 Intel 与 ARM64 架构。首版没有 Apple 开发者签名和公证；可能只有构建工具所需的临时签名。确认来源与校验值后，可在系统“隐私与安全性”查看允许打开的选项，不要关闭系统的全局安全检查。
-- Windows MSI 可引导安装 WebView2 并完成安装注册。ZIP 只包含应用可执行文件，需预装 WebView2；数据仍保存在用户应用目录，不保证注册 `power-switch://` 导入协议。系统可能显示未知发布者提示。
-- Linux AppImage 使用前需 `chmod +x`，部分发行版需要 FUSE；DEB/RPM 由系统包管理器安装。当前 New API 登录的系统凭证持久化仅实现 macOS/Windows，Linux 的此功能限制不因打包而改变。
+- Windows MSI 可引导安装 WebView2 并完成安装注册。ZIP 只包含应用可执行文件，需预装 WebView2；数据仍保存在 `%USERPROFILE%\.power-switch`，不保证注册 `power-switch://` 导入协议。系统可能显示未知发布者提示。
+- Linux AppImage 使用前需 `chmod +x`，部分发行版需要 FUSE；DEB/RPM 由系统包管理器安装。New API 登录会话在三个桌面系统中均明文保存在用户目录的 `.power-switch/new-api/sessions/`。
 - 默认在启动时检查 GitHub 最新正式版；「测试计划」开启后还会检查已发布的 RC。关闭「自动更新」则跳过启动检查，设置页的「检查更新」仍可使用正式版通道。检查只读取清单，用户确认后才下载。安装后 macOS/Linux 可点击重启；Windows 安装器会自动关闭应用，安装完成后重新打开应用。
+- 更新清单与安装包优先通过 `https://ghfast.top/` 加速读取；加速源请求、解析或安装包验签失败时，客户端重试原始 GitHub Release 地址。发布清单仍记录原始 GitHub URL，更新包始终按内置公钥验签。
 - 已安装的旧版客户端仍使用固定的 Latest 正式版地址，无法从远端获得新的通道设置；需要手动安装一次支持「测试计划」的版本，之后才可选择接收 RC。
 
 ## 重跑、正式发布与故障处理

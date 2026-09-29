@@ -17,6 +17,8 @@ pub struct Settings {
     pub auto_update: bool,
     #[serde(default)]
     pub receive_rc: bool,
+    #[serde(default)]
+    pub new_api_url: Option<String>,
 }
 
 /// Preserve startup update checks for users whose saved settings predate these switches.
@@ -34,6 +36,7 @@ impl Default for Settings {
             codex_dir: None,
             auto_update: automatic_updates_enabled(),
             receive_rc: false,
+            new_api_url: None,
         }
     }
 }
@@ -62,11 +65,10 @@ pub struct Paths {
 impl Paths {
     /// Resolve native user directories without shell expansion or cwd fallbacks.
     pub fn discover() -> AppResult<Self> {
+        let home = dirs::home_dir().ok_or("无法获取系统用户目录")?;
         Ok(Self {
-            home: dirs::home_dir().ok_or("无法获取系统用户目录")?,
-            data: dirs::data_local_dir()
-                .ok_or("无法获取系统应用数据目录")?
-                .join("power-switch"),
+            data: home.join(".power-switch"),
+            home,
             workbuddy_env: nonempty_env("WORKBUDDY_DATA_DIR"),
             codex_env: nonempty_env("CODEX_HOME"),
         })
@@ -136,7 +138,14 @@ pub fn validate_absolute(path: &Path) -> AppResult<()> {
 
 #[cfg(test)]
 mod settings_tests {
-    use super::Settings;
+    use super::{Paths, Settings};
+
+    /// Resolve app-owned storage from the OS home directory, never the legacy AppData location.
+    #[test]
+    fn discovers_hidden_home_directory() {
+        let paths = Paths::discover().unwrap();
+        assert_eq!(paths.data, paths.home.join(".power-switch"));
+    }
 
     /// Existing settings files keep automatic checks but do not opt in to RC updates.
     #[test]

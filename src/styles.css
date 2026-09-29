@@ -273,7 +273,7 @@ nav {
   gap: 5px;
 }
 .version-number {
-  font-size: 9px;
+  font-size: 10px;
 }
 .version-update-trigger {
   width: 19px;
@@ -392,11 +392,6 @@ h1 {
   font-weight: 600;
   letter-spacing: 1px;
   line-height: 1.25;
-}
-.page-header p {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 12px;
 }
 .header-actions {
   display: flex;
@@ -860,6 +855,21 @@ h1 {
   font-size: 7px;
   letter-spacing: 1.5px;
 }
+.page-bottom > span:last-child:hover svg {
+  color: var(--orange);
+  animation: workflow-sparkle 900ms ease-in-out 1;
+}
+@keyframes workflow-sparkle {
+  35% {
+    opacity: 1;
+    transform: rotate(-12deg) scale(1.18);
+    filter: drop-shadow(0 0 3px var(--orange));
+  }
+  70% {
+    opacity: 0.7;
+    transform: rotate(8deg) scale(1.06);
+  }
+}
 .notification {
   position: fixed;
   top: 18px;
@@ -942,9 +952,11 @@ h1 {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
   width: min(560px, calc(100vw - 40px));
   max-height: calc(100vh - 48px);
-  overflow: auto;
+  overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -957,10 +969,16 @@ h1 {
 }
 .modal-heading {
   display: flex;
+  flex-shrink: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 15px;
   margin-bottom: 22px;
+}
+.modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .modal-heading h2 {
   font-size: 20px;
@@ -1437,6 +1455,9 @@ textarea {
 .update-section-title {
   align-items: center;
 }
+.update-section-title > svg {
+  align-self: flex-start;
+}
 .update-section-title > .button {
   margin-left: auto;
   white-space: nowrap;
@@ -1742,11 +1763,6 @@ textarea {
   }
   .page-header h1 {
     font-size: 25px;
-  }
-  .page-header p {
-    font-size: 10px;
-    max-width: 170px;
-    line-height: 1.8;
   }
   .button {
     font-size: 10px;

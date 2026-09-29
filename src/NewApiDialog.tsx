@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Unplug,
 } from "lucide-react";
-import { isDesktop } from "./api";
+import { api, isDesktop } from "./api";
 import { Modal } from "./components";
 import {
   defaultNewApiUrl,
@@ -36,26 +36,19 @@ const agentProtocol: Record<AgentKind, Protocol> = {
   claude: "anthropic-messages",
   codex: "openai-responses",
 };
-const urlStorageKey = "power-switch.new-api-url";
-
-/** Read only a non-secret instance preference; private-mode storage failures are harmless. */
-function savedUrl(): string {
-  try {
-    return localStorage.getItem(urlStorageKey) || defaultNewApiUrl;
-  } catch {
-    return defaultNewApiUrl;
-  }
-}
-
 /** Guide one native login and recoverable model import without exposing management credentials. */
 export function NewApiDialog({
   onClose,
   onAdded,
+  onPreferenceSaved,
+  savedBaseUrl,
 }: {
   onClose: () => void;
   onAdded: () => Promise<void>;
+  onPreferenceSaved?: () => Promise<void>;
+  savedBaseUrl?: string | null;
 }) {
-  const [baseUrl, setBaseUrl] = useState(savedUrl);
+  const [baseUrl, setBaseUrl] = useState(savedBaseUrl || defaultNewApiUrl);
   const [connection, setConnection] = useState<NewApiConnection | null>(null);
   const [status, setStatus] = useState<NewApiStatus | null>(null);
   const [catalog, setCatalog] = useState<NewApiCatalog | null>(null);
@@ -206,7 +199,7 @@ export function NewApiDialog({
     setError(null);
   }
 
-  /** Check the canonical panel address and remember only this non-secret preference. */
+  /** Check the canonical panel address and persist this preference in the native store. */
   async function check() {
     const turn = generation.current;
     const info = await newApi.check(baseUrl);
@@ -216,11 +209,8 @@ export function NewApiDialog({
     setBaseUrl(info.baseUrl);
     setStatus(next);
     if (next.error) setError(next.error);
-    try {
-      localStorage.setItem(urlStorageKey, info.baseUrl);
-    } catch {
-      /* Preferences are optional. */
-    }
+    await api.newApiUrl(info.baseUrl);
+    await onPreferenceSaved?.();
   }
 
   /** Start a separate IdP window and retain its opaque handle solely for cancellation. */
@@ -369,7 +359,7 @@ export function NewApiDialog({
               </strong>
               <p>
                 {connected
-                  ? "登录会话保存在系统钥匙串，API Key 单独保存在本机模型库。"
+                  ? "登录会话与 API Key 均以明文保存在用户目录的 .power-switch 中。"
                   : pending
                     ? "请在独立登录窗口中完成扫码；授权完成后将自动返回。"
                     : "首次需要完成扫码。会话过期后可重新登录，已有密钥仍独立有效。"}
