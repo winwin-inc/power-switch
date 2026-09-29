@@ -19,7 +19,9 @@ import {
   installCommand,
   localPlatform,
   packageMatrix,
+  retryOperation,
   verifyPackage,
+  writePackageIdentityEnvironment,
 } from "./package.mjs";
 import { targets } from "./release.mjs";
 
@@ -113,6 +115,56 @@ test("collects each Linux installer and verifies the generated checksums", async
     verifyPackage(directory, "linux-x64"),
     /checksum failed/,
   );
+});
+
+test("cloud package identity is fixed before build creates local files", async (t) => {
+  const root = await fixture(t);
+  const environmentFile = join(root, "github-env");
+  await writePackageIdentityEnvironment(root, environmentFile);
+  const identity = (await readFile(environmentFile, "utf8"))
+    .trim()
+    .split("=", 2)[1];
+  assert.match(identity, /^v0\.1\.7-[a-f0-9]{12}$/);
+  await installer(root, "windows-x64", "msi");
+  const previous = process.env.PACKAGE_SOURCE_IDENTITY;
+  process.env.PACKAGE_SOURCE_IDENTITY = identity;
+  try {
+    const directory = await collectPackage("windows-x64", root);
+    assert.ok(directory.includes(identity));
+    assert.ok(!directory.includes("-dirty"));
+    await verifyPackage(directory, "windows-x64");
+  } finally {
+    if (previous === undefined) delete process.env.PACKAGE_SOURCE_IDENTITY;
+    else process.env.PACKAGE_SOURCE_IDENTITY = previous;
+  }
+});
+
+test("retries interrupted GitHub requests at most three times", async () => {
+  let attempts = 0;
+  const result = await retryOperation(
+    () => {
+      attempts += 1;
+      if (attempts < 3) throw new Error("temporary disconnect");
+      return "downloaded";
+    },
+    3,
+    0,
+  );
+  assert.equal(result, "downloaded");
+  assert.equal(attempts, 3);
+  attempts = 0;
+  await assert.rejects(
+    retryOperation(
+      () => {
+        attempts += 1;
+        throw new Error("persistent disconnect");
+      },
+      3,
+      0,
+    ),
+    /persistent disconnect/,
+  );
+  assert.equal(attempts, 3);
 });
 
 test("missing, duplicate and empty installer files fail before staging", async (t) => {
