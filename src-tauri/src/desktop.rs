@@ -292,7 +292,11 @@ pub fn run() {
             app.manage(Mutex::new(engine));
             app.manage(Mutex::new(VerifiedModels::default()));
             app.manage(Mutex::new(crate::skills::SkillManager::default()));
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            // Packaged Windows builds register power-switch:// through AppxManifest.xml.
+            #[cfg(any(
+                target_os = "linux",
+                all(target_os = "windows", not(feature = "store-msix"))
+            ))]
             app.deep_link().register_all()?;
             app.deep_link().on_open_url({
                 let handle = app.handle().clone();

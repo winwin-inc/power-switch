@@ -23,6 +23,7 @@ check:
 test:
     pnpm test
     pnpm test:release
+    pnpm test:store
     cargo test --locked --manifest-path src-tauri/Cargo.toml
 
 # 格式化项目代码。

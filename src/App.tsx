@@ -74,6 +74,8 @@ import {
   type Settings,
 } from "./types";
 
+const isStoreBuild = import.meta.env.VITE_STORE_MSIX === "1";
+
 type Page = "models" | "backups" | "settings" | "skills";
 type ModalState =
   | { kind: "guide" }
@@ -177,7 +179,7 @@ export default function App() {
     void refresh().catch((e) => setNotice({ kind: "error", text: String(e) }));
   }, [refresh, setNotice]);
   useEffect(() => {
-    if (!isDesktop || !data) return;
+    if (!isDesktop || !data || isStoreBuild) return;
     if (updateInstallation.current) return;
     updateCheckRevision.current += 1;
     setUpdateState({ kind: "idle" });
@@ -1698,98 +1700,110 @@ function SettingsPage({
         </div>
         <code>{data.dataDir}</code>
       </section>
-      <section className="settings-section">
-        <div className="section-title update-section-title">
-          <RotateCw size={19} />
-          <div>
-            <h2>软件更新</h2>
-            <p>检查更新只获取版本信息；下载安装始终需要你确认。</p>
+      {isStoreBuild ? (
+        <section className="settings-section">
+          <div className="section-title">
+            <RotateCw size={19} />
+            <div>
+              <h2>软件更新</h2>
+              <p>此版本由 Microsoft Store 管理更新，请在商店中查看新版本。</p>
+            </div>
           </div>
-          <button
-            type="button"
-            className="button secondary"
-            disabled={
-              busy ||
-              !isDesktop ||
-              updateState.kind === "checking" ||
-              updateState.kind === "installing" ||
-              updateState.kind === "ready"
-            }
-            onClick={onCheckUpdate}
-          >
-            {updateState.kind === "checking" ? "正在检查" : "检查更新"}
-          </button>
-        </div>
-        <div className="update-preference-row">
-          <div>
-            <strong>自动更新</strong>
-            <p>启动时自动检查新版本，不会自动下载。</p>
+        </section>
+      ) : (
+        <section className="settings-section">
+          <div className="section-title update-section-title">
+            <RotateCw size={19} />
+            <div>
+              <h2>软件更新</h2>
+              <p>检查更新只获取版本信息；下载安装始终需要你确认。</p>
+            </div>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={
+                busy ||
+                !isDesktop ||
+                updateState.kind === "checking" ||
+                updateState.kind === "installing" ||
+                updateState.kind === "ready"
+              }
+              onClick={onCheckUpdate}
+            >
+              {updateState.kind === "checking" ? "正在检查" : "检查更新"}
+            </button>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-label="自动更新"
-            aria-checked={data.settings.autoUpdate}
-            className="settings-switch"
-            disabled={
-              busy ||
-              updateState.kind === "installing" ||
-              updateState.kind === "ready"
-            }
-            onClick={() =>
-              onUpdateSave({
-                autoUpdate: !data.settings.autoUpdate,
-                receiveRc: data.settings.autoUpdate
-                  ? false
-                  : data.settings.receiveRc,
-              })
-            }
-          >
-            <span />
-          </button>
-        </div>
-        <div className="update-preference-row">
-          <div>
-            <strong>测试计划</strong>
-            <p>开启后接收 RC 版本；关闭后只接收正式版。</p>
+          <div className="update-preference-row">
+            <div>
+              <strong>自动更新</strong>
+              <p>启动时自动检查新版本，不会自动下载。</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-label="自动更新"
+              aria-checked={data.settings.autoUpdate}
+              className="settings-switch"
+              disabled={
+                busy ||
+                updateState.kind === "installing" ||
+                updateState.kind === "ready"
+              }
+              onClick={() =>
+                onUpdateSave({
+                  autoUpdate: !data.settings.autoUpdate,
+                  receiveRc: data.settings.autoUpdate
+                    ? false
+                    : data.settings.receiveRc,
+                })
+              }
+            >
+              <span />
+            </button>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-label="测试计划"
-            aria-checked={data.settings.receiveRc}
-            className="settings-switch"
-            disabled={
-              busy ||
-              !data.settings.autoUpdate ||
-              updateState.kind === "installing" ||
-              updateState.kind === "ready"
-            }
-            onClick={() =>
-              onUpdateSave({
-                autoUpdate: true,
-                receiveRc: !data.settings.receiveRc,
-              })
-            }
-          >
-            <span />
-          </button>
-        </div>
-        {updateState.kind === "available" && (
-          <button
-            type="button"
-            className="button secondary update-available-button"
-            onClick={onShowUpdate}
-          >
-            发现 v{updateState.version}，查看更新
-          </button>
-        )}
-        {updateState.kind === "error" && (
-          <p role="status" className="update-error-text">
-            {updateState.message}
-          </p>
-        )}
-      </section>
+          <div className="update-preference-row">
+            <div>
+              <strong>测试计划</strong>
+              <p>开启后接收 RC 版本；关闭后只接收正式版。</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-label="测试计划"
+              aria-checked={data.settings.receiveRc}
+              className="settings-switch"
+              disabled={
+                busy ||
+                !data.settings.autoUpdate ||
+                updateState.kind === "installing" ||
+                updateState.kind === "ready"
+              }
+              onClick={() =>
+                onUpdateSave({
+                  autoUpdate: true,
+                  receiveRc: !data.settings.receiveRc,
+                })
+              }
+            >
+              <span />
+            </button>
+          </div>
+          {updateState.kind === "available" && (
+            <button
+              type="button"
+              className="button secondary update-available-button"
+              onClick={onShowUpdate}
+            >
+              发现 v{updateState.version}，查看更新
+            </button>
+          )}
+          {updateState.kind === "error" && (
+            <p role="status" className="update-error-text">
+              {updateState.message}
+            </p>
+          )}
+        </section>
+      )}
       <div className="settings-actions">
         <span>
           <ArrowDownToLine size={15} />

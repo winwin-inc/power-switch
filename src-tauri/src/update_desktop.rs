@@ -170,6 +170,9 @@ pub async fn check_app_update(
     app: AppHandle,
     state: State<'_, Mutex<Engine>>,
 ) -> AppResult<Option<UpdateInfo>> {
+    if cfg!(feature = "store-msix") {
+        return Ok(None);
+    }
     let include_rc = receive_rc(&state)?;
     Ok(find_update(&app, include_rc)
         .await?
@@ -186,6 +189,9 @@ pub async fn install_app_update(
     state: State<'_, Mutex<Engine>>,
     version: String,
 ) -> AppResult<()> {
+    if cfg!(feature = "store-msix") {
+        return Err("Microsoft Store 版本由商店管理更新".into());
+    }
     let include_rc = receive_rc(&state)?;
     let update = find_update(&app, include_rc)
         .await?
