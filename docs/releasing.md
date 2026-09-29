@@ -1,5 +1,22 @@
 # 发布说明
 
+## 测试安装包（不发布版本）
+
+`just package-local` 在当前系统打包并收集测试安装包；macOS 始终生成 Intel 与 Apple Silicon 通用 DMG。也可用 `just package macos-universal`、`just package windows-x64`、`just package windows-arm64`、`just package linux-x64` 或 `just package linux-arm64` 明确指定平台。Windows 与 Linux 命令须在对应架构的原生系统执行。命令会检查 Rust 目标库、使用锁定依赖，并把安装包和 `SHA256SUMS` 放在 `artifacts/packages/v<版本>-<提交前 12 位>[-dirty]/<平台>/`。
+
+本地需要 Node.js、pnpm、just 和对应系统的 Tauri 原生依赖。macOS 通用包还需要同时安装 `aarch64-apple-darwin` 与 `x86_64-apple-darwin` Rust 目标；缺少时可使用 rustup 管理工具链并执行 `rustup target add aarch64-apple-darwin x86_64-apple-darwin`。
+
+从 Mac 触发全部五个平台的原生构建：
+
+```sh
+just package-all
+# 或在已检出该分支时显式指定：just package-all my-branch
+gh run list --repo winwin-inc/power-switch --workflow package.yml
+just package-download <成功运行的 ID>
+```
+
+云端命令要求当前分支工作区干净，且 GitHub 上该分支的提交与本地 `HEAD` 相同。`Package` 工作流只上传保留 14 天的 Actions 工件；下载命令把它们放在 `artifacts/packages/cloud/<运行 ID>/` 并逐平台验证 SHA-256。测试包关闭更新器产物与签名，不创建 GitHub Release，也不能充当正式更新资产。正式版本仍使用下文的标签发布流程；Microsoft Store MSIX 使用独立工作流。
+
 ## 分支与版本策略
 
 本项目使用 GitHub Actions 执行持续集成与桌面应用发布，采用以下策略：

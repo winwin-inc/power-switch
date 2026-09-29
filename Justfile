@@ -23,6 +23,7 @@ check:
 test:
     pnpm test
     pnpm test:release
+    pnpm test:package
     pnpm test:store
     cargo test --locked --manifest-path src-tauri/Cargo.toml
 
@@ -34,6 +35,22 @@ format:
 # 使用当前平台构建测试安装包。
 build:
     pnpm build
+
+# 在当前系统生成测试安装包：macOS 为 Intel/Apple Silicon 通用 DMG。
+package-local:
+    node scripts/package.mjs package-local
+
+# 在对应原生系统打包 macos-universal、windows-x64、windows-arm64、linux-x64 或 linux-arm64。
+package platform:
+    node scripts/package.mjs package {{quote(platform)}}
+
+# 从已推送、无本地修改的当前分支触发五平台云端测试打包；不会创建 Release。
+package-all branch="":
+    node scripts/package.mjs dispatch {{quote(branch)}}
+
+# 下载指定 Actions 运行的五平台测试包并校验 SHA-256。
+package-download run_id:
+    node scripts/package.mjs download {{quote(run_id)}}
 
 # 从生成的图标母版导出平台图标。
 icons:

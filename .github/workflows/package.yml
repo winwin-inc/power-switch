@@ -1,0 +1,62 @@
+name: Package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Package quality gate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.ref }}
+
+  prepare:
+    name: Resolve native platform matrix
+    needs: checks
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - id: platforms
+        shell: bash
+        run: node scripts/package.mjs matrix >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Package (${{ matrix.platform }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          targets: ${{ matrix.rustTargets }}
+      - run: pnpm install --frozen-lockfile
+      - name: Build unsigned test installer
+        run: node scripts/package.mjs build ${{ matrix.platform }}
+        env:
+          CI: "true"
+      - name: Collect installer and SHA-256
+        run: node scripts/package.mjs collect ${{ matrix.platform }}
+        env:
+          PACKAGE_OUTPUT_DIR: package-assets/${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.platform }}
+          path: package-assets/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 14
