@@ -8,7 +8,12 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import { AgentPicker, ApplyReview, ModelForm } from "../components";
+import {
+  AgentPicker,
+  ApplyReview,
+  ModelForm,
+  ProtocolMark,
+} from "../components";
 import {
   newModel,
   type AppData,
@@ -89,6 +94,21 @@ beforeEach(() => {
     .mockResolvedValue(["test-model", "test-model-new"]);
 });
 afterEach(() => vi.useRealTimers());
+
+describe("Agent icons", () => {
+  it("shows the Codex icon for OpenAI Responses models", () => {
+    const { container } = render(
+      <ProtocolMark protocol="openai-responses" name="专注代码" />,
+    );
+    const mark = container.querySelector(".protocol-mark.openai-responses");
+    expect(mark).toHaveClass("brand-icon");
+    expect(mark?.querySelector("img")).toHaveAttribute(
+      "src",
+      expect.stringContaining("codex.png"),
+    );
+    expect(mark).not.toHaveTextContent("专");
+  });
+});
 
 describe("model editing", () => {
   it("offers Responses for Codex while retaining the provider model-list requirement", async () => {
@@ -532,6 +552,33 @@ describe("temporary model test feedback", () => {
 });
 
 describe("settings and backup controls", () => {
+  it("shows model deletion in the fixed global tip", async () => {
+    vi.mocked(api.delete).mockResolvedValue();
+    render(<App />);
+    await screen.findByText("我的模型");
+    await userEvent.click(
+      screen.getByRole("button", { name: "删除 我的模型" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("模型已从模型库删除。");
+    expect(notice.parentElement).toHaveClass("app-shell");
+    expect(notice.closest(".page-content")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "关闭提示" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("keeps the SKILL sidebar entry unavailable", async () => {
+    render(<App />);
+    await screen.findByText("我的模型");
+    const skills = screen.getByRole("button", { name: /SKILL 技能/ });
+    expect(skills).toBeDisabled();
+    expect(skills).toHaveTextContent("待开放");
+    expect(
+      screen.getByRole("heading", { name: /^模型库/ }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps native selections in the draft until saving and preserves them on cancel", async () => {
     vi.mocked(api.data).mockResolvedValue({
       ...data,

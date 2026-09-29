@@ -617,7 +617,6 @@ h1 {
 .openai-responses.protocol-tag {
   color: var(--green);
   background: var(--green-soft);
-  opacity: 0.48;
 }
 .anthropic-messages.protocol-mark,
 .anthropic-messages.protocol-tag {
@@ -866,17 +865,25 @@ h1 {
   letter-spacing: 1.5px;
 }
 .notification {
+  position: fixed;
+  top: 18px;
+  left: calc((100vw + 228px) / 2);
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(420px, calc(100vw - 228px - 48px));
+  max-height: min(280px, calc(100vh - 106px));
   padding: 13px 15px;
   border: 1px solid var(--border);
   border-radius: 8px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
-  margin-bottom: 18px;
   font-size: 12px;
   background: var(--surface);
   line-height: 1.7;
   overflow-wrap: anywhere;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px #0000001c;
 }
 .notification > span {
   flex: 1;
@@ -888,8 +895,6 @@ h1 {
 .notification.error {
   color: #bc6857;
   background: var(--orange-soft);
-  position: relative;
-  z-index: 60;
 }
 .empty-state {
   padding: 62px 24px;
@@ -1604,6 +1609,10 @@ textarea {
     margin-left: 198px;
     width: calc(100% - 198px);
   }
+  .notification {
+    left: calc((100vw + 198px) / 2);
+    width: min(420px, calc(100vw - 198px - 48px));
+  }
   .page-content {
     padding: 30px 25px 22px;
   }
@@ -1676,6 +1685,10 @@ textarea {
     margin-left: 76px;
     width: calc(100% - 76px);
   }
+  .notification {
+    left: calc((100vw + 76px) / 2);
+    width: min(420px, calc(100vw - 76px - 48px));
+  }
   .page-content {
     padding: 26px 22px;
   }
@@ -1713,6 +1726,11 @@ textarea {
   }
 }
 @media (max-width: 580px) {
+  .notification {
+    top: 61px;
+    width: calc(100vw - 76px - 30px);
+    max-height: min(280px, calc(100vh - 76px));
+  }
   .page-content {
     padding: 25px 15px;
   }

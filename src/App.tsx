@@ -562,26 +562,6 @@ export default function App() {
               </div>
             )}
           </header>
-          {notice && (
-            <div
-              role={notice.kind === "error" ? "alert" : "status"}
-              className={`notification ${notice.kind}`}
-            >
-              {notice.kind === "success" ? (
-                <CheckCircle2 size={19} />
-              ) : (
-                <CircleHelp size={19} />
-              )}
-              <span>{notice.text}</span>
-              <button
-                className="icon-button"
-                aria-label="关闭提示"
-                onClick={() => setNotice(null)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
           {!data ? (
             <div className="empty-state">
               <LoaderCircle className="spin" />
@@ -1037,6 +1017,26 @@ export default function App() {
           </footer>
         </div>
       </main>
+      {notice && (
+        <div
+          role={notice.kind === "error" ? "alert" : "status"}
+          className={`notification ${notice.kind}`}
+        >
+          {notice.kind === "success" ? (
+            <CheckCircle2 size={19} />
+          ) : (
+            <CircleHelp size={19} />
+          )}
+          <span>{notice.text}</span>
+          <button
+            className="icon-button"
+            aria-label="关闭提示"
+            onClick={() => setNotice(null)}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {modal?.kind === "guide" && (
         <NewcomerGuide
           onClose={closeModal}

@@ -116,6 +116,17 @@ describe("sidebar app updates", () => {
     expect(screen.queryByText("检查更新")).not.toBeInTheDocument();
   });
 
+  it("shows manual update results in the fixed global tip", async () => {
+    checkForUpdate.mockResolvedValue(null);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    const message = await screen.findByText("当前更新通道已是最新版本。");
+    const notice = message.closest('[role="status"]');
+    expect(notice).toHaveTextContent("当前更新通道已是最新版本。");
+    expect(notice?.parentElement).toHaveClass("app-shell");
+  });
+
   it("places software updates after local data in Settings", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "设置" }));
