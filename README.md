@@ -63,6 +63,12 @@ WorkBuddy 写入成功后可以打开新建任务页，请在 WorkBuddy 中手�
 
 恢复前会再次备份当前配置，避免误操作后无法返回。
 
+## 本地数据目录
+
+macOS、Linux 使用 `$HOME/.power-switch`，Windows 使用 `%USERPROFILE%\.power-switch`。设置页会显示实际路径。目录中的 `models.json` 保存模型、API Key 和应用设置；`new-api.json` 保存密钥创建恢复记录；`new-api/sessions/` 保存 New API 登录会话；`backups/` 保存应用配置前的原始快照。`skill-staging/` 只用于技能安装期间的临时文件，`.lock` 用于防止多个进程同时写入。
+
+以上凭据和快照均为**明文**，请按敏感数据保护整个目录。应用只读写这个新目录，不会读取、迁移或删除旧应用数据目录与旧系统凭据库条目；升级后需要重新添加旧模型并登录 New API。应用到 Agent 时，仍会写入各 Agent 自己的配置文件。
+
 ## 设置配置位置
 
 在“设置”中可以修改 WorkBuddy、Claude Code 的配置文件位置和 Codex 的配置目录。默认位置如下：
@@ -81,7 +87,7 @@ Codex 使用 OpenAI Responses 协议。手动添加时，所选模型必须由�
 
 ## 安全说明
 
-- 模型和 API Key 只保存在本机。
+- 模型、API Key、New API 登录会话和备份均以明文保存在本机用户目录。
 - API Key 以本地配置形式保存，请不要分享模型文件、备份文件或带密钥的分享链接。
 - 保存模型不会自动修改 Agent；必须经过“应用到 Agent”并确认后才会写入。
 - 删除模型库记录不会撤销服务商上的密钥，需要时请到服务商控制台操作。

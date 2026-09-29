@@ -1,7 +1,7 @@
 use crate::{
     engine::Engine,
     new_api::{
-        self, vault::SystemVault, Catalog, Connection, Error, ImportRequest, ImportResult,
+        self, vault::FileVault, Catalog, Connection, Error, ImportRequest, ImportResult,
         LoginStatus, NewApi, Result,
     },
 };
@@ -29,9 +29,12 @@ fn signal_cancel(app: &AppHandle, id: &str) {
     }
 }
 
-/// Register the connector beside the existing model engine, using a separate metadata file.
+/// Register the connector with its app-owned plaintext session directory.
 pub fn setup(app: &AppHandle, data: std::path::PathBuf) {
-    app.manage(AsyncMutex::new(NewApi::new(data, Box::new(SystemVault))));
+    app.manage(AsyncMutex::new(NewApi::new(
+        data.clone(),
+        Box::new(FileVault::new(data)),
+    )));
     app.manage(LoginCancels::default());
 }
 

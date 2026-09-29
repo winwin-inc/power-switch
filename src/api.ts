@@ -40,6 +40,8 @@ export const api = {
   delete: (id: string) => call<void>("delete_model", { id }),
   /** Persist validated appearance, path and update-channel settings. */
   settings: (settings: Settings) => call<void>("save_settings", { settings }),
+  /** Persist only the last verified New API instance address. */
+  newApiUrl: (url: string) => call<void>("save_new_api_url", { url }),
   /** Generate the second-confirmation preview. */
   preview: (id: string, agents: AgentKind[], selectWorkbuddyModel: boolean) =>
     call<ApplyPreview>("preview_apply", {

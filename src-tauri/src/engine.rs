@@ -144,13 +144,31 @@ impl Engine {
     pub fn open(paths: Paths) -> AppResult<Self> {
         files::private_dir(&paths.data)?;
         files::private_dir(&paths.data.join("backups"))?;
+        files::private_dir(&paths.data.join("new-api"))?;
+        files::private_dir(&paths.data.join("new-api/sessions"))?;
+        let lock_path = paths.data.join(".lock");
+        let lock_meta = fs::symlink_metadata(&lock_path);
+        match lock_meta {
+            Ok(meta) if files::unsafe_file_type(&meta) || !meta.is_file() => {
+                return Err("数据锁必须是普通文件".into());
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("无法检查数据锁：{e}")),
+        }
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
-            .open(paths.data.join(".lock"))
+            .open(lock_path)
             .map_err(|e| format!("打开数据锁失败：{e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            lock.set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("设置数据锁权限失败：{e}"))?;
+        }
         lock.try_lock_exclusive()
             .map_err(|_| "另一个 power-switch 正在使用此数据目录")?;
         let engine = Self {
@@ -278,7 +296,17 @@ impl Engine {
             }
         }
         let mut store = self.load()?;
+        let mut settings = settings;
+        settings.new_api_url = store.settings.new_api_url.clone();
         store.settings = settings;
+        self.save(&store)
+    }
+
+    /// Save only the last verified New API instance without replacing concurrently edited settings.
+    pub fn new_api_url(&mut self, url: String) -> AppResult<()> {
+        let canonical = crate::new_api::instance_url(&url).map_err(|error| error.message)?;
+        let mut store = self.load()?;
+        store.settings.new_api_url = Some(canonical);
         self.save(&store)
     }
 
@@ -736,6 +764,57 @@ fn now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A populated legacy directory is ignored when the new app-owned directory is empty.
+    #[test]
+    fn startup_ignores_legacy_data_and_preserves_narrow_preferences() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let legacy = temp.path().join("legacy").join("power-switch");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+        let old_bytes = serde_json::to_vec(&Store {
+            version: 1,
+            models: vec![],
+            settings: Settings::default(),
+        })
+        .unwrap();
+        fs::write(legacy.join("models.json"), &old_bytes).unwrap();
+        let paths = Paths {
+            data: home.join(".power-switch"),
+            home,
+            workbuddy_env: None,
+            codex_env: None,
+        };
+        let mut engine = Engine::open(paths.clone()).unwrap();
+        assert!(engine.data().unwrap().models.is_empty());
+        assert!(!paths.data.join("models.json").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for dir in ["", "backups", "new-api", "new-api/sessions"] {
+                assert_eq!(
+                    fs::metadata(paths.data.join(dir))
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o700
+                );
+            }
+        }
+        engine
+            .new_api_url("https://new-api.example.com/".into())
+            .unwrap();
+        engine.settings(Settings::default()).unwrap();
+        drop(engine);
+        let reopened = Engine::open(paths).unwrap();
+        assert_eq!(
+            reopened.current_settings().unwrap().new_api_url.as_deref(),
+            Some("https://new-api.example.com")
+        );
+        assert_eq!(fs::read(legacy.join("models.json")).unwrap(), old_bytes);
+    }
 
     /// Verify a second-file failure restores the first and journals the failure.
     #[test]

@@ -53,6 +53,7 @@ export interface Settings {
   codexDir: string | null;
   autoUpdate: boolean;
   receiveRc: boolean;
+  newApiUrl?: string | null;
 }
 export interface AgentPath {
   agent: AgentKind;

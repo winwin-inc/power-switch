@@ -8,6 +8,9 @@ use url::Url;
 
 const RELEASES_API: &str = "https://api.github.com/repos/winwin-inc/power-switch/releases";
 const RELEASE_ASSET_PREFIX: &str = "https://github.com/winwin-inc/power-switch/releases/download/";
+const STABLE_MANIFEST_URL: &str =
+    "https://github.com/winwin-inc/power-switch/releases/latest/download/latest.json";
+const GHFAST_PREFIX: &str = "https://ghfast.top/";
 const UPDATE_PROGRESS_EVENT: &str = "app-update-progress";
 
 #[derive(Clone, Deserialize)]
@@ -106,6 +109,24 @@ fn manifest_url(release: &GithubRelease) -> AppResult<Url> {
     Url::parse(&manifest.browser_download_url).map_err(|_| "更新清单地址无效".into())
 }
 
+/// Proxy only this repository's HTTPS release assets through the download accelerator.
+fn ghfast_url(original: &Url) -> AppResult<Url> {
+    let path = original.path();
+    if original.scheme() != "https"
+        || original.host_str() != Some("github.com")
+        || original.port().is_some()
+        || !original.username().is_empty()
+        || original.password().is_some()
+        || original.query().is_some()
+        || original.fragment().is_some()
+        || !(path.starts_with("/winwin-inc/power-switch/releases/download/")
+            || path.starts_with("/winwin-inc/power-switch/releases/latest/download/"))
+    {
+        return Err("更新资源地址不是受支持的 GitHub Release 地址".into());
+    }
+    Url::parse(&format!("{GHFAST_PREFIX}{original}")).map_err(|_| "GitHub 加速地址无效".into())
+}
+
 /// Bound the complete GitHub release scan so pagination cannot leave update checks hanging.
 async fn github_releases() -> AppResult<Vec<GithubRelease>> {
     let client = reqwest::Client::builder()
@@ -138,30 +159,85 @@ async fn github_releases() -> AppResult<Vec<GithubRelease>> {
     .map_err(|_| "获取 GitHub 发布列表超时，请稍后重试".to_string())?
 }
 
-/// Let Tauri parse the signed manifest and compare it with this installed app version.
+/// Retry malformed, unreachable, or invalid accelerated manifests from GitHub.
+async fn check_manifest(
+    app: &AppHandle,
+    original: &Url,
+    selected_tag: Option<&str>,
+) -> AppResult<Option<Update>> {
+    let accelerated = ghfast_url(original)?;
+    let mut accelerated_error = None;
+    for (endpoint, timeout) in [
+        (accelerated, Duration::from_secs(10)),
+        (original.clone(), Duration::from_secs(30)),
+    ] {
+        let result: AppResult<Option<Update>> = async {
+            let update = app
+                .updater_builder()
+                .timeout(timeout)
+                .endpoints(vec![endpoint])
+                .map_err(|error| format!("更新地址无效：{error}"))?
+                .build()
+                .map_err(|error| format!("无法初始化更新器：{error}"))?
+                .check()
+                .await
+                .map_err(|error| format!("检查更新失败：{error}"))?;
+            match update {
+                Some(update) if version_allowed(&update.version, selected_tag)? => {
+                    ghfast_url(&update.download_url)?;
+                    Ok(Some(update))
+                }
+                Some(_) => Err("更新清单的版本不在当前通道".into()),
+                None => Ok(None),
+            }
+        }
+        .await;
+        match result {
+            Ok(update) => return Ok(update),
+            Err(error) => {
+                if let Some(first_error) = accelerated_error.take() {
+                    return Err(format!(
+                        "加速源和 GitHub 均无法检查更新：加速源：{first_error}；GitHub：{error}"
+                    ));
+                }
+                accelerated_error = Some(error);
+            }
+        }
+    }
+    Err("无法检查更新".into())
+}
+
+/// Let Tauri compare the selected release manifest with this installed app version.
 async fn find_update(app: &AppHandle, include_rc: bool) -> AppResult<Option<Update>> {
-    let mut builder = app.updater_builder().timeout(Duration::from_secs(30));
-    let mut selected_tag = None;
-    if include_rc {
+    let (manifest, selected_tag) = if include_rc {
         let releases = github_releases().await?;
         let latest = newest_release(&releases, true).ok_or("没有可用的正式版或 RC 发布")?;
-        selected_tag = Some(latest.tag_name.clone());
-        builder = builder
-            .endpoints(vec![manifest_url(latest)?])
-            .map_err(|error| format!("更新地址无效：{error}"))?;
-    }
-    let update = builder
-        .build()
-        .map_err(|error| format!("无法初始化更新器：{error}"))?
-        .check()
+        (manifest_url(latest)?, Some(latest.tag_name.clone()))
+    } else {
+        (
+            Url::parse(STABLE_MANIFEST_URL).map_err(|_| "正式版更新地址无效")?,
+            None,
+        )
+    };
+    check_manifest(app, &manifest, selected_tag.as_deref()).await
+}
+
+/// Download and verify a package while reporting progress for the current source.
+async fn download_update(update: &Update, app: &AppHandle) -> AppResult<Vec<u8>> {
+    let mut downloaded = 0_u64;
+    update
+        .download(
+            |chunk, total| {
+                downloaded = downloaded.saturating_add(chunk as u64);
+                let percent = total
+                    .filter(|size| *size > 0)
+                    .map(|size| downloaded.saturating_mul(100).saturating_div(size).min(100) as u8);
+                let _ = app.emit(UPDATE_PROGRESS_EVENT, percent);
+            },
+            || {},
+        )
         .await
-        .map_err(|error| format!("检查更新失败：{error}"))?;
-    match update {
-        Some(update) if version_allowed(&update.version, selected_tag.as_deref())? => {
-            Ok(Some(update))
-        }
-        _ => Ok(None),
-    }
+        .map_err(|error| format!("下载安装失败：{error}"))
 }
 
 /// Check metadata only; package download is reserved for the separate confirmed command.
@@ -193,26 +269,29 @@ pub async fn install_app_update(
         return Err("Microsoft Store 版本由商店管理更新".into());
     }
     let include_rc = receive_rc(&state)?;
-    let update = find_update(&app, include_rc)
+    let mut update = find_update(&app, include_rc)
         .await?
         .ok_or("当前没有可用更新，请重新检查")?;
     if update.version != version {
         return Err("可用版本已变化，请重新检查后确认".into());
     }
-    let mut downloaded = 0_u64;
-    let progress_app = app.clone();
+    let mut accelerated = update.clone();
+    accelerated.download_url = ghfast_url(&update.download_url)?;
+    accelerated.timeout = Some(Duration::from_secs(30));
+    update.timeout = Some(Duration::from_secs(60));
+    let bytes = match download_update(&accelerated, &app).await {
+        Ok(bytes) => bytes,
+        Err(accelerated_error) => {
+            let _ = app.emit(UPDATE_PROGRESS_EVENT, None::<u8>);
+            download_update(&update, &app).await.map_err(|original_error| {
+                format!(
+                    "加速源和 GitHub 均无法下载更新：加速源：{accelerated_error}；GitHub：{original_error}"
+                )
+            })?
+        }
+    };
     update
-        .download_and_install(
-            move |chunk, total| {
-                downloaded = downloaded.saturating_add(chunk as u64);
-                let percent = total
-                    .filter(|size| *size > 0)
-                    .map(|size| downloaded.saturating_mul(100).saturating_div(size).min(100) as u8);
-                let _ = progress_app.emit(UPDATE_PROGRESS_EVENT, percent);
-            },
-            || {},
-        )
-        .await
+        .install(bytes)
         .map_err(|error| format!("下载安装失败：{error}"))
 }
 
@@ -284,6 +363,42 @@ mod tests {
         candidate.assets.last_mut().unwrap().browser_download_url =
             "https://example.com/latest.json".into();
         assert!(manifest_url(&candidate).is_err());
+    }
+
+    /// Mirror only trusted release paths, including stable and versioned manifests.
+    #[test]
+    fn builds_trusted_ghfast_urls() {
+        let stable = Url::parse(STABLE_MANIFEST_URL).unwrap();
+        assert_eq!(
+            ghfast_url(&stable).unwrap().as_str(),
+            format!("{GHFAST_PREFIX}{STABLE_MANIFEST_URL}")
+        );
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let endpoints = config["plugins"]["updater"]["endpoints"]
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            endpoints[0].as_str(),
+            Some(ghfast_url(&stable).unwrap().as_str())
+        );
+        assert_eq!(endpoints[1].as_str(), Some(STABLE_MANIFEST_URL));
+        let package = Url::parse(
+            "https://github.com/winwin-inc/power-switch/releases/download/v0.1.6/power-switch-v0.1.6-macos-universal.tar.gz",
+        )
+        .unwrap();
+        assert_eq!(
+            ghfast_url(&package).unwrap().as_str(),
+            format!("{GHFAST_PREFIX}{package}")
+        );
+        assert!(ghfast_url(&Url::parse("https://example.com/update.tar.gz").unwrap()).is_err());
+        assert!(ghfast_url(
+            &Url::parse(
+                "http://github.com/winwin-inc/power-switch/releases/download/v0.1.6/latest.json"
+            )
+            .unwrap()
+        )
+        .is_err());
     }
 
     /// A copied RC manifest cannot leak through the stable endpoint or impersonate another tag.

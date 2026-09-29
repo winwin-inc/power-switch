@@ -39,6 +39,7 @@ let settings: Settings = {
   codexDir: null,
   autoUpdate: true,
   receiveRc: false,
+  newApiUrl: null,
 };
 
 /** Keep the browser preview useful without pretending to have native file access. */
@@ -61,7 +62,7 @@ export async function demoCall(
       models,
       settings,
       backups: [],
-      dataDir: "桌面端系统应用数据目录",
+      dataDir: "用户目录/.power-switch",
       agents: [
         {
           agent: "workbuddy",
@@ -91,7 +92,14 @@ export async function demoCall(
   }
   if (command === "delete_all_backups") return 0;
   if (command === "save_settings") {
-    settings = structuredClone(args.settings as Settings);
+    settings = {
+      ...structuredClone(args.settings as Settings),
+      newApiUrl: settings.newApiUrl,
+    };
+    return;
+  }
+  if (command === "save_new_api_url") {
+    settings.newApiUrl = args.url as string;
     return;
   }
   if (command === "cancel_preview") return;

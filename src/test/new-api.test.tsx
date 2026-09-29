@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NewApiDialog } from "../NewApiDialog";
+import { api } from "../api";
 import { newApi, type NewApiImported, type NewApiStatus } from "../new-api-api";
 
-vi.mock("../api", () => ({ isDesktop: true }));
+vi.mock("../api", () => ({ isDesktop: true, api: { newApiUrl: vi.fn() } }));
 vi.mock("../new-api-api", async (importOriginal) => {
   const original = await importOriginal<typeof import("../new-api-api")>();
   return {
@@ -54,7 +55,7 @@ const imported: NewApiImported = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  localStorage.clear();
+  vi.mocked(api.newApiUrl).mockResolvedValue();
   vi.mocked(newApi.check).mockResolvedValue({
     baseUrl,
     version: "v1.0.0-rc.40",
@@ -84,6 +85,24 @@ beforeEach(() => {
 });
 
 describe("New API connector", () => {
+  it("loads the saved instance address and writes verified URLs only to native settings", async () => {
+    const user = userEvent.setup();
+    const savedBaseUrl = "https://saved.example.com";
+    render(
+      <NewApiDialog
+        onClose={vi.fn()}
+        onAdded={vi.fn()}
+        savedBaseUrl={savedBaseUrl}
+      />,
+    );
+    expect(screen.getByRole("textbox", { name: /实例地址/ })).toHaveValue(
+      savedBaseUrl,
+    );
+    await screen.findByRole("option", { name: "chat-model" });
+    await user.click(screen.getByRole("button", { name: "检查连接" }));
+    await waitFor(() => expect(api.newApiUrl).toHaveBeenCalledWith(baseUrl));
+    expect(localStorage.getItem("power-switch.new-api-url")).toBeNull();
+  });
   it("imports with the displayed identity after native verification and keeps the secret masked", async () => {
     const user = userEvent.setup();
     const onAdded = vi.fn().mockResolvedValue(undefined);
