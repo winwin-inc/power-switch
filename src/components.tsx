@@ -8,6 +8,7 @@ import {
 } from "react";
 import { api } from "./api";
 import claudeAgentIcon from "./assets/agents/claude.png";
+import codexAgentIcon from "./assets/agents/codex.png";
 import workbuddyAgentIcon from "./assets/agents/workbuddy.png";
 import {
   ChevronDown,
@@ -88,7 +89,7 @@ export function Modal({
   );
 }
 
-/** Show the platform name's first character, uppercasing English initials and preserving Chinese characters. */
+/** Show the native Agent icon for each supported protocol, falling back to the model initial. */
 export function ProtocolMark({
   protocol,
   name,
@@ -104,7 +105,9 @@ export function ProtocolMark({
       ? workbuddyAgentIcon
       : protocol === "anthropic-messages"
         ? claudeAgentIcon
-        : null;
+        : protocol === "openai-responses"
+          ? codexAgentIcon
+          : null;
   return (
     <span
       className={`protocol-mark ${protocol} ${small ? "small" : ""} ${agentIcon ? "brand-icon" : ""}`}

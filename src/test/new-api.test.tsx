@@ -144,7 +144,7 @@ describe("New API connector", () => {
       />,
     );
     await screen.findByRole("option", { name: "chat-model" });
-    const client = screen.getByLabelText("目前客户端");
+    const client = screen.getByLabelText("目标客户端");
     expect(client.querySelector('option[value="codex"]')).toBeEnabled();
     await userEvent.selectOptions(client, "codex");
     expect(

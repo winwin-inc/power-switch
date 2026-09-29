@@ -451,7 +451,7 @@ export function NewApiDialog({
             </div>
             <div className="new-api-fields">
               <label className="field">
-                目前客户端
+                目标客户端
                 <select
                   value={agent}
                   disabled={Boolean(busy)}
@@ -499,7 +499,7 @@ export function NewApiDialog({
                 </select>
                 <span className="field-hint">
                   {agent === "codex"
-                    ? "显示 default 分组中的 OpenAI 模型；保存前会调用 Responses 接口验证。"
+                    ? "显示 default 分组中的 OpenAI 模型候选；创建密钥后会调用 Responses 接口，通过测试才保存。"
                     : "仅显示 default 分组中支持当前客户端的模型。"}
                 </span>
               </label>

@@ -89,7 +89,7 @@ export function NewcomerGuide({
                   <KeyRound size={20} /> 从 New API 添加
                 </div>
                 <div className="newcomer-demo-row">
-                  <span>目前客户端</span>
+                  <span>目标客户端</span>
                   <strong>WorkBuddy</strong>
                 </div>
                 <div className="newcomer-demo-row">

@@ -106,32 +106,36 @@ fn manifest_url(release: &GithubRelease) -> AppResult<Url> {
     Url::parse(&manifest.browser_download_url).map_err(|_| "更新清单地址无效".into())
 }
 
-/// List published releases through the official API so RC builds can be found without changing the stable feed.
+/// Bound the complete GitHub release scan so pagination cannot leave update checks hanging.
 async fn github_releases() -> AppResult<Vec<GithubRelease>> {
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(15))
         .user_agent("power-switch-updater")
         .build()
         .map_err(|error| format!("无法初始化更新检查：{error}"))?;
-    let mut releases = Vec::new();
-    for page in 1..=10 {
-        let batch: Vec<GithubRelease> = client
-            .get(format!("{RELEASES_API}?per_page=100&page={page}"))
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|error| format!("无法获取 GitHub 发布列表：{error}"))?
-            .json()
-            .await
-            .map_err(|error| format!("无法解析 GitHub 发布列表：{error}"))?;
-        let count = batch.len();
-        releases.extend(batch);
-        if count < 100 {
-            return Ok(releases);
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let mut releases = Vec::new();
+        for page in 1..=10 {
+            let batch: Vec<GithubRelease> = client
+                .get(format!("{RELEASES_API}?per_page=100&page={page}"))
+                .header("Accept", "application/vnd.github+json")
+                .send()
+                .await
+                .and_then(reqwest::Response::error_for_status)
+                .map_err(|error| format!("无法获取 GitHub 发布列表：{error}"))?
+                .json()
+                .await
+                .map_err(|error| format!("无法解析 GitHub 发布列表：{error}"))?;
+            let count = batch.len();
+            releases.extend(batch);
+            if count < 100 {
+                return Ok(releases);
+            }
         }
-    }
-    Err("发布列表过长，无法安全判断最新版本".into())
+        Err("发布列表过长，无法安全判断最新版本".into())
+    })
+    .await
+    .map_err(|_| "获取 GitHub 发布列表超时，请稍后重试".to_string())?
 }
 
 /// Let Tauri parse the signed manifest and compare it with this installed app version.
