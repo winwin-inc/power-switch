@@ -55,7 +55,6 @@ export function buildArguments(name) {
   const target = targets[name];
   if (!target) throw new Error(`Unknown package platform: ${name}`);
   return [
-    "tauri",
     "build",
     "--ci",
     "--target",
@@ -68,6 +67,13 @@ export function buildArguments(name) {
     "--",
     "--locked",
   ];
+}
+
+/** 在 Windows 通过 cmd.exe 执行 pnpm.cmd，其余系统直接调用 pnpm。 */
+export function installCommand(host = operatingSystem) {
+  return host === "win32"
+    ? ["cmd.exe", ["/d", "/s", "/c", "pnpm install --frozen-lockfile"]]
+    : ["pnpm", ["install", "--frozen-lockfile"]];
 }
 
 /** 检查项目依赖和 Rust 目标，缺项时在耗时构建前失败。 */
@@ -97,18 +103,23 @@ export async function buildPackage(name) {
     await readFile(join(root, "package.json"), "utf8"),
   );
   await checkVersion(root, `v${manifest.version}`);
-  await lstat(join(root, "node_modules", ".bin", "tauri")).catch(() => {
+  const cli = join(root, "node_modules", "@tauri-apps", "cli", "tauri.js");
+  await lstat(cli).catch(() => {
     throw new Error(
       "Missing frontend dependencies. Run pnpm install --frozen-lockfile.",
     );
   });
-  execFileSync("pnpm", buildArguments(name), { cwd: root, stdio: "inherit" });
+  execFileSync(process.execPath, [cli, ...buildArguments(name)], {
+    cwd: root,
+    stdio: "inherit",
+  });
 }
 
 /** 安装锁定依赖后在本机完成构建和收集。 */
 export async function packageHere(name) {
   assertBuildPrerequisites(name);
-  execFileSync("pnpm", ["install", "--frozen-lockfile"], {
+  const [command, args] = installCommand();
+  execFileSync(command, args, {
     cwd: root,
     stdio: "inherit",
   });
