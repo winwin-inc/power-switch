@@ -528,10 +528,7 @@ export default function App() {
         <div className="page-content">
           <header className="page-header">
             <div>
-              <h1>
-                {titles[page][0]}
-                <span className="heading-dot">.</span>
-              </h1>
+              <h1>{titles[page][0]}</h1>
               <p>{titles[page][1]}</p>
             </div>
             {page === "models" && (

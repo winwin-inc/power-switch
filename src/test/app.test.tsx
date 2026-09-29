@@ -552,6 +552,25 @@ describe("temporary model test feedback", () => {
 });
 
 describe("settings and backup controls", () => {
+  /** Verify that every available module heading contains only its title. */
+  it("shows module headings without a trailing dot", async () => {
+    render(<App />);
+    await screen.findByText("我的模型");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      /^模型库$/,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "模型配置备份" }));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      /^模型配置备份$/,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      /^设置$/,
+    );
+  });
+
   it("shows model deletion in the fixed global tip", async () => {
     vi.mocked(api.delete).mockResolvedValue();
     render(<App />);
