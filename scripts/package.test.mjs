@@ -16,6 +16,7 @@ import {
   buildArguments,
   collectPackage,
   dispatchPackage,
+  installCommand,
   localPlatform,
   packageMatrix,
   verifyPackage,
@@ -78,11 +79,23 @@ test("maps all five native targets to runners, bundles and local hosts", () => {
   for (const name of Object.keys(targets)) {
     const args = buildArguments(name);
     assert.ok(args.includes(targets[name].triple));
+    assert.equal(args[0], "build");
     assert.ok(args.includes(targets[name].bundles));
     assert.ok(args.includes("--no-sign"));
     assert.ok(args.includes('{"bundle":{"createUpdaterArtifacts":false}}'));
     assert.deepEqual(args.slice(-2), ["--", "--locked"]);
   }
+});
+
+test("runs pnpm.cmd through cmd.exe on Windows and pnpm directly elsewhere", () => {
+  assert.deepEqual(installCommand("win32"), [
+    "cmd.exe",
+    ["/d", "/s", "/c", "pnpm install --frozen-lockfile"],
+  ]);
+  assert.deepEqual(installCommand("darwin"), [
+    "pnpm",
+    ["install", "--frozen-lockfile"],
+  ]);
 });
 
 test("collects each Linux installer and verifies the generated checksums", async (t) => {
