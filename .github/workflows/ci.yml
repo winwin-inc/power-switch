@@ -40,6 +40,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm test
       - run: pnpm test:release
+      - run: pnpm test:package
       - run: pnpm test:store
       - name: Check project versions
         shell: bash
