@@ -45,6 +45,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           targets: ${{ matrix.rustTargets }}
+      - name: Record source identity before build
+        run: node scripts/package.mjs identity-env
       - run: pnpm install --frozen-lockfile
       - name: Build unsigned test installer
         run: node scripts/package.mjs build ${{ matrix.platform }}

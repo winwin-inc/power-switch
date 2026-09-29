@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createReadStream, existsSync } from "node:fs";
 import {
+  appendFile,
   copyFile,
   lstat,
   mkdir,
@@ -179,11 +180,26 @@ export async function packageIdentity(projectRoot = root) {
   return `v${version}-${sha.slice(0, 12)}${dirty ? "-dirty" : ""}`;
 }
 
+/** 在安装与编译前把源码标识写入 GitHub Actions 的跨步骤环境文件。 */
+export async function writePackageIdentityEnvironment(
+  projectRoot = root,
+  outputFile = process.env.GITHUB_ENV,
+) {
+  if (!outputFile) throw new Error("GITHUB_ENV is required for identity-env.");
+  await appendFile(
+    outputFile,
+    `PACKAGE_SOURCE_IDENTITY=${await packageIdentity(projectRoot)}\n`,
+  );
+}
+
 /** 复制当前平台的测试安装包，并写入可独立验证的 SHA-256 清单。 */
 export async function collectPackage(name, projectRoot = root) {
   const target = targets[name];
   if (!target) throw new Error(`Unknown package platform: ${name}`);
-  const identity = await packageIdentity(projectRoot);
+  const identity =
+    process.env.PACKAGE_SOURCE_IDENTITY || (await packageIdentity(projectRoot));
+  if (!/^v[0-9A-Za-z.+-]+-[a-f0-9]{12}(?:-dirty)?$/.test(identity))
+    throw new Error(`Invalid package source identity: ${identity}`);
   const base = join(
     projectRoot,
     "src-tauri",
@@ -335,21 +351,20 @@ export async function downloadPackage(runId) {
   if (!/^[1-9]\d*$/.test(runId ?? ""))
     throw new Error("Expected a numeric GitHub Actions run ID.");
   const run = JSON.parse(
-    execFileSync(
-      "gh",
-      [
-        "run",
-        "view",
-        runId,
-        "--repo",
-        repository,
-        "--json",
-        "workflowName,status,conclusion",
-      ],
-      {
-        cwd: root,
-        encoding: "utf8",
-      },
+    await retryOperation(() =>
+      execFileSync(
+        "gh",
+        [
+          "run",
+          "view",
+          runId,
+          "--repo",
+          repository,
+          "--json",
+          "workflowName,status,conclusion",
+        ],
+        { cwd: root, encoding: "utf8" },
+      ),
     ),
   );
   if (
@@ -360,27 +375,41 @@ export async function downloadPackage(runId) {
     throw new Error(`Run ${runId} is not a successful Package workflow.`);
   const directory = join(root, "artifacts", "packages", "cloud", runId);
   await mkdir(directory, { recursive: true });
-  execFileSync(
-    "gh",
-    [
-      "run",
-      "download",
-      runId,
-      "--repo",
-      repository,
-      "--pattern",
-      "package-*",
-      "--dir",
-      directory,
-    ],
-    {
-      cwd: root,
-      stdio: "inherit",
-    },
+  await retryOperation(() =>
+    execFileSync(
+      "gh",
+      [
+        "run",
+        "download",
+        runId,
+        "--repo",
+        repository,
+        "--pattern",
+        "package-*",
+        "--dir",
+        directory,
+      ],
+      { cwd: root, stdio: "inherit" },
+    ),
   );
   for (const name of Object.keys(targets))
     await verifyPackage(join(directory, `package-${name}`), name);
   return directory;
+}
+
+/** 对偶发 GitHub 请求中断作三次有限重试，文件校验错误仍立即失败。 */
+export async function retryOperation(operation, attempts = 3, delayMs = 1000) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt === attempts) throw error;
+      console.warn(
+        `GitHub request interrupted; retrying (${attempt}/${attempts - 1})...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
 }
 
 /** 提供矩阵、构建、收集和 GitHub CLI 操作的统一命令行入口。 */
@@ -389,6 +418,7 @@ async function main() {
   if (command === "matrix")
     console.log(`matrix=${JSON.stringify(packageMatrix())}`);
   else if (command === "local-platform") console.log(localPlatform());
+  else if (command === "identity-env") await writePackageIdentityEnvironment();
   else if (command === "package-local")
     console.log(await packageHere(localPlatform()));
   else if (command === "package" && value)
@@ -400,7 +430,7 @@ async function main() {
   else if (command === "download") console.log(await downloadPackage(value));
   else
     throw new Error(
-      "Usage: package.mjs matrix|local-platform|package-local|package <platform>|build <platform>|collect <platform>|dispatch [branch]|download <run-id>",
+      "Usage: package.mjs matrix|local-platform|identity-env|package-local|package <platform>|build <platform>|collect <platform>|dispatch [branch]|download <run-id>",
     );
 }
 
