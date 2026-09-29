@@ -54,6 +54,8 @@ gh repo edit winwin-inc/power-switch --default-branch master
 
 CI 使用 Node.js 22、pnpm 10.18.3、Rust 1.92.0。前端依赖采用 `--frozen-lockfile`，Rust 检查、测试和发布构建采用 `--locked`。
 
+Windows Installer 只比较 MSI `ProductVersion` 的前三段，[第四段不参与升级比较](https://learn.microsoft.com/en-us/windows/win32/msi/productversion)。已发布的 `v0.1.6-rc.4` 安装包设置为 `0.1.6.4`，因此正式版 `v0.1.6` 的 WiX 版本使用 `0.1.7.0`，确保 MSI 升级序列实际递增；应用本身仍显示 `0.1.6`。后续 Windows 版本必须使前三段高于 `0.1.7`，不能只增加第四段。发布前应在 Windows 上验证从上一版 MSI 升级。
+
 ## 准备一个版本
 
 在已同步的 `master` 上建立版本准备分支：
