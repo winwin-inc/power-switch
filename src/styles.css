@@ -393,10 +393,6 @@ h1 {
   letter-spacing: 1px;
   line-height: 1.25;
 }
-.heading-dot {
-  color: var(--orange);
-  margin-left: 3px;
-}
 .page-header p {
   color: var(--muted);
   font-size: 12px;
