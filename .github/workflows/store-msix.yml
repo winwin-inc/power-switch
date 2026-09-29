@@ -1,0 +1,100 @@
+name: Microsoft Store MSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable v<SemVer> tag on master to package for Microsoft Store.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Store identity and release tag
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          path: release-source
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate stable tag, master ancestry and Partner Center identity
+        shell: bash
+        env:
+          STORE_TAG: ${{ inputs.tag }}
+          STORE_PACKAGE_NAME: ${{ vars.STORE_PACKAGE_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+          STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
+          RELEASE_ROOT: ${{ github.workspace }}/release-source
+        run: |
+          node release-source/scripts/store-msix.mjs check "$STORE_TAG"
+          test "$(git -C release-source rev-parse HEAD)" = "$(git -C release-source rev-parse "refs/tags/$STORE_TAG^{commit}")"
+          git -C release-source merge-base --is-ancestor HEAD origin/master
+
+  checks:
+    name: Release quality gate
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: refs/tags/${{ inputs.tag }}
+
+  build:
+    name: Store package (${{ matrix.platform }})
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+          - platform: windows-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          path: release-source
+      - uses: ./.github/actions/setup
+        with:
+          targets: ${{ matrix.target }}
+      - run: pnpm install --frozen-lockfile
+        working-directory: release-source
+      - name: Build packaged Store executable
+        run: pnpm tauri build --ci --target ${{ matrix.target }} --no-bundle --features store-msix -- --locked
+        working-directory: release-source
+        env:
+          CI: "true"
+          VITE_STORE_MSIX: "1"
+      - name: Package unsigned MSIX for Partner Center signing
+        shell: bash
+        env:
+          STORE_TAG: ${{ inputs.tag }}
+          STORE_PLATFORM: ${{ matrix.platform }}
+          STORE_PACKAGE_NAME: ${{ vars.STORE_PACKAGE_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+          STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
+          RELEASE_ROOT: ${{ github.workspace }}/release-source
+        run: node release-source/scripts/store-msix.mjs pack "$STORE_TAG" "$STORE_PLATFORM"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-${{ matrix.platform }}
+          path: release-source/store-assets/*.msix
+          if-no-files-found: error
+          retention-days: 14

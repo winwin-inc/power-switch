@@ -25,6 +25,23 @@ gh secret set TAURI_SIGNING_PRIVATE_KEY --repo winwin-inc/power-switch < /path/t
 
 Tauri 配置内的公钥用于验证更新包。设置仓库 Secret 后，Release 工作流才能构建带签名的更新资产。签名密钥丢失后，已安装版本无法验证后续更新。
 
+## Microsoft Store MSIX（Windows）
+
+Store 版与 GitHub MSI/ZIP 版是两个分发渠道。Store 版使用 MSIX，由 Microsoft 在审核通过后签名并通过商店更新；GitHub 版继续使用现有 MSI/ZIP 和 Tauri 更新签名。没有受信任的 Windows 代码签名证书时，不要向 Store 提交当前 MSI/EXE，也不要把未签名的 MSIX 作为可双击安装包提供给用户。
+
+先在 [Partner Center 应用和游戏](https://aka.ms/submitwindowsapp)选择 **新建产品 → MSIX 或 PWA 应用**，输入名称、检查可用性，再点 **预留产品名称**（[微软操作说明](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/reserve-your-apps-name)）。若首页只有“见解”和“我的访问权限”，先检查是否已通过 [Store 开发者入口](https://storedeveloper.microsoft.com/)完成 Microsoft Store 开发者注册；企业 Entra 账号还须由账号所有者或管理员分配 Developer、Manager 或 Owner 角色。刚完成注册可等待约五分钟并刷新或打开上述直达链接，详见[微软账号说明](https://learn.microsoft.com/en-us/windows/apps/publish/partner-center/open-a-developer-account)。预留后打开产品管理中的“查看应用标识详细信息”，把以下四项原样写入仓库 **Settings → Secrets and variables → Actions → Variables**：
+
+| 仓库变量                       | Partner Center 值                        |
+| ------------------------------ | ---------------------------------------- |
+| `STORE_PACKAGE_NAME`           | Package/Identity Name                    |
+| `STORE_PUBLISHER`              | 完整的 Publisher 标识，通常以 `CN=` 开头 |
+| `STORE_PUBLISHER_DISPLAY_NAME` | Publisher display name                   |
+| `STORE_DISPLAY_NAME`           | 已预留的应用显示名称                     |
+
+这些是公开包标识，不是签名私钥。Store 工作流在缺少任何值或使用 RC 标签时提前失败。仅在正式版标签已进入 `master` 历史后，手动运行 Actions 中的 **Microsoft Store MSIX**，输入例如 `v0.1.6`。工作流执行现有质量检查，分别产出 x64、ARM64 的 `store-windows-*` 工件。`MakeAppx` 生成的包未签名，只供 Partner Center 提交。应用版本 `0.1.6` 映射为 Store 包版本 `1.1.6.0`；映射固定为 `(major + 1).minor.patch.0`，确保 Store 要求的首段非零、末段为零，并保持跨版本递增。
+
+上传前检查两个包的清单身份与架构，使用 Windows App Certification Kit 检验。在 Partner Center 审核和重新签名完成后，通过 **Microsoft Store 页面**安装到干净的 Windows 11 x64、ARM64 机器，测试启动、模型添加与应用、`power-switch://` 导入、本地数据和商店升级。商店版不会检查或安装 GitHub MSI；设置中会显示商店更新说明。现有 GitHub 安装用户改装商店版时，还要核对模型与密钥能否从原 AppData 路径读取，因为 MSIX 可能虚拟化新建文件。确认产品页可用后再把 README 的 Windows 首选入口改为商店链接。
+
 维护者本机需要 Git SSH 推送权限。查看私有仓库 Actions、修改默认分支及管理 Release 时，还需 GitHub CLI 登录：
 
 ```sh

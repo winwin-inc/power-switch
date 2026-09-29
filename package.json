@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:release": "node --test scripts/release.test.mjs",
+    "test:store": "node --test scripts/store-msix.test.mjs",
     "release:check": "node scripts/release.mjs check",
     "format": "prettier --write src scripts docs *.json *.ts *.html *.md .github",
     "format:check": "prettier --check src scripts docs *.json *.ts *.html *.md .github"
