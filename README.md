@@ -53,6 +53,31 @@ WorkBuddy 写入成功后可以打开新建任务页，请在 WorkBuddy 中手�
 
 接口固定使用 `default` 分组。同一实例、同一账号重复添加模型时会复用专属密钥；创建或复用密钥后会测试模型，成功才保存到模型库。测试失败时，密钥可能已经创建，重试会复用已有密钥。
 
+## MCP 连接器
+
+打开侧栏“**MCP 连接器**”，列表默认内置“马上赢 X 平台”和“马上赢内部 LightDash”，也可以自定义添加远程 Streamable HTTP MCP。两条内置连接器固定使用 `x-api-key` 认证，令牌分别保存；点击“配置令牌”，通过各自申请链接取得令牌并填写即可。内置条目不能删除。以前保存的同服务 ID 记录会保留原有身份和令牌。自定义连接器默认无需认证，也可选 Bearer 或自定义请求头密钥。
+
+| 内置连接器           | 服务 ID                  | 固定 MCP 地址                           | 令牌申请地址                                                                                        |
+| -------------------- | ------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 马上赢 X 平台        | `msy-x-lightdash`        | `https://mcp-x.brandct.com/mcp`         | [申请马上赢 X 令牌](https://x.brandct.com/generalSettings/personalAccessTokens)                     |
+| 马上赢内部 LightDash | `msy-internal-lightdash` | `https://mcp-lightdash.banmahui.cn/mcp` | [申请马上赢内部 LightDash 令牌](https://lightdash.banmahui.cn/generalSettings/personalAccessTokens) |
+
+申请链接在桌面端通过系统默认浏览器打开。
+
+“测试连接”只初始化 MCP 并读取工具清单，不调用工具。失败仍可保存，应用前会提示测试状态。连接器的固定地址和令牌保存在 `~/.power-switch/mcp-connectors.json`；编辑后需要重新应用到 Agent。
+
+点击“应用到 Agent”通过 WorkBuddy、Claude Code、Codex 平台导航选择配置范围，可跨平台勾选。WorkBuddy 仅支持用户全局，项目级选项显示“暂不支持”并置灰；Codex 和 Claude Code 支持用户全局及项目级。项目级配置使用同一个所选项目目录。应用先完整预览脱敏变更，再备份并合并到各平台的原生配置；预览内容统一滚动，确认按钮固定在底部。
+
+| Agent       | 用户全局                | 项目级（所选项目目录内） |
+| ----------- | ----------------------- | ------------------------ |
+| WorkBuddy   | `~/.workbuddy/mcp.json` | 暂不支持（不可选）       |
+| Codex       | `~/.codex/config.toml`  | `.codex/config.toml`     |
+| Claude Code | `~/.claude.json`        | `.mcp.json`              |
+
+路径依据 [WorkBuddy MCP 指南](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/MCP-Guide)、[Codex 配置文档](https://learn.chatgpt.com/docs/config-file/config-basic)、[Claude Code MCP 文档](https://code.claude.com/docs/en/mcp)。
+
+有认证的项目级配置包含明文令牌。项目属于 Git 仓库时，本应用只允许写入已被 Git 忽略、且未被跟踪的目标文件；需要你先设置忽略规则。应用完成后，重启或新建目标 Agent 会话；WorkBuddy 还需在“自定义连接器”中信任该连接器，Codex 项目级配置需信任项目，Claude Code 项目级连接器首次使用时需批准。删除本应用中的连接器记录不会移除已应用的 Agent 配置。
+
 ## 配置备份与恢复
 
 每次应用配置前，power-switch 都会先创建备份。打开“模型配置备份”可以：
@@ -65,7 +90,7 @@ WorkBuddy 写入成功后可以打开新建任务页，请在 WorkBuddy 中手�
 
 ## 本地数据目录
 
-macOS、Linux 使用 `$HOME/.power-switch`，Windows 使用 `%USERPROFILE%\.power-switch`。设置页会显示实际路径。目录中的 `models.json` 保存模型、API Key 和应用设置；`new-api.json` 保存密钥创建恢复记录；`new-api/sessions/` 保存 New API 登录会话；`backups/` 保存应用配置前的原始快照。`skill-staging/` 只用于技能安装期间的临时文件，`.lock` 用于防止多个进程同时写入。
+macOS、Linux 使用 `$HOME/.power-switch`，Windows 使用 `%USERPROFILE%\.power-switch`。设置页会显示实际路径。目录中的 `models.json` 保存模型、API Key 和应用设置；`mcp-connectors.json` 保存 MCP 地址和令牌；`new-api.json` 保存密钥创建恢复记录；`new-api/sessions/` 保存 New API 登录会话；`backups/` 保存应用配置前的原始快照。`skill-staging/` 只用于技能安装期间的临时文件，`.lock` 用于防止多个进程同时写入。
 
 以上凭据和快照均为**明文**，请按敏感数据保护整个目录。应用只读写这个新目录，不会读取、迁移或删除旧应用数据目录与旧系统凭据库条目；升级后需要重新添加旧模型并登录 New API。应用到 Agent 时，仍会写入各 Agent 自己的配置文件。
 

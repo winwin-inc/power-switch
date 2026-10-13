@@ -1,0 +1,306 @@
+.mcp-page {
+  display: grid;
+  gap: 18px;
+}
+.mcp-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+  padding: 26px 30px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: linear-gradient(125deg, var(--surface), var(--blue-soft));
+}
+.mcp-intro > svg {
+  color: var(--blue);
+  flex: none;
+}
+.mcp-intro h2 {
+  margin: 8px 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+.mcp-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mcp-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 15px;
+}
+.mcp-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.mcp-card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  min-width: 0;
+}
+.mcp-card-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 43px;
+  height: 43px;
+  border-radius: 11px;
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+.mcp-card-copy {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-card h3 {
+  margin: 1px 0 5px;
+  font-size: 15px;
+}
+.mcp-built-in {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: var(--blue);
+  background: var(--blue-soft);
+  font-size: 10px;
+  vertical-align: middle;
+}
+.mcp-page input[readonly] {
+  color: var(--muted);
+  background: var(--surface);
+}
+.mcp-server-id {
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  color: var(--blue);
+}
+.mcp-card-copy p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-secret-state {
+  flex: none;
+  color: var(--muted);
+  font-size: 10px;
+}
+.mcp-card-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 18px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.mcp-card-actions .button {
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 10px;
+}
+.mcp-delete {
+  margin-left: auto;
+  color: var(--red);
+}
+.mcp-test-result,
+.mcp-banner {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.mcp-test-result {
+  margin: 15px 0 0;
+}
+.mcp-test-result.passed,
+.mcp-banner.success {
+  color: var(--green);
+  background: var(--green-soft);
+}
+.mcp-test-result.failed,
+.mcp-banner.error {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 9%, var(--surface));
+}
+.mcp-banner {
+  margin: 0;
+}
+.mcp-banner.warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--orange);
+  background: var(--orange-soft);
+  margin-bottom: 15px;
+}
+.mcp-pat-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  color: var(--blue);
+  font-size: 12px;
+  text-decoration: underline;
+}
+.mcp-targets {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 20px;
+}
+.mcp-platform-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.mcp-platform-tabs button {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mcp-platform-tabs button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--blue);
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
+.mcp-platform-tabs button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.mcp-selected-targets {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+/* Keep one scrolling content area and an always-visible confirmation footer. */
+.mcp-review-modal {
+  width: min(1080px, calc(100vw - 40px));
+  height: min(800px, calc(100vh - 48px));
+}
+.mcp-review-modal .modal-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.mcp-review-modal .apply-review {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+.mcp-review-modal .apply-review-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 6px;
+}
+.mcp-review-modal .modal-footer {
+  flex-shrink: 0;
+}
+.mcp-review-modal pre {
+  max-height: none;
+  overflow: visible;
+}
+.mcp-review-modal .preview-files summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mcp-review-modal .diff-grid > div {
+  min-width: 0;
+}
+.mcp-target {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.mcp-target input {
+  accent-color: var(--blue);
+}
+.mcp-target-disabled {
+  color: var(--muted);
+  background: var(--bg);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.mcp-target-disabled input {
+  cursor: not-allowed;
+}
+.mcp-target span {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex: 1;
+  gap: 12px;
+  font-size: 12px;
+}
+.mcp-target small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.mcp-path-row {
+  display: flex;
+  gap: 8px;
+}
+.mcp-path-row input {
+  min-width: 0;
+}
+.mcp-empty {
+  margin-top: 8px;
+}
+@media (max-width: 690px) {
+  .mcp-intro {
+    padding: 20px;
+  }
+  .mcp-intro > svg {
+    display: none;
+  }
+  .mcp-secret-state {
+    display: none;
+  }
+  .mcp-target span {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+}

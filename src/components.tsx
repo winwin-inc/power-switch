@@ -763,40 +763,42 @@ export function ApplyReview({
   busy: boolean;
 }) {
   return (
-    <>
-      <div className="warning-note">
-        <AlertTriangle size={20} />
-        <div>
-          <strong>二次确认：将覆盖以下配置文件中的相关内容</strong>
-          <p>确认前会自动创建备份。请核对路径与变更，密钥已隐藏。</p>
+    <div className="apply-review">
+      <div className="apply-review-content">
+        <div className="warning-note">
+          <AlertTriangle size={20} />
+          <div>
+            <strong>二次确认：将覆盖以下配置文件中的相关内容</strong>
+            <p>确认前会自动创建备份。请核对路径与变更，密钥已隐藏。</p>
+          </div>
         </div>
-      </div>
-      <div className="preview-files">
-        {preview.files.map((file) => (
-          <details key={file.path} open>
-            <summary>
-              <FileJson size={16} />
-              <span>{file.path}</span>
-              <ChevronDown size={15} />
-            </summary>
-            <div className="diff-grid">
-              <div>
-                <span className="diff-label">变更前</span>
-                <pre>{file.before}</pre>
+        <div className="preview-files">
+          {preview.files.map((file) => (
+            <details key={file.path} open>
+              <summary>
+                <FileJson size={16} />
+                <span>{file.path}</span>
+                <ChevronDown size={15} />
+              </summary>
+              <div className="diff-grid">
+                <div>
+                  <span className="diff-label">变更前</span>
+                  <pre>{file.before}</pre>
+                </div>
+                <div>
+                  <span className="diff-label after">变更后</span>
+                  <pre>{file.after}</pre>
+                </div>
               </div>
-              <div>
-                <span className="diff-label after">变更后</span>
-                <pre>{file.after}</pre>
-              </div>
-            </div>
-          </details>
+            </details>
+          ))}
+        </div>
+        {preview.notices.map((n) => (
+          <p className="preview-notice" key={n}>
+            {n}
+          </p>
         ))}
       </div>
-      {preview.notices.map((n) => (
-        <p className="preview-notice" key={n}>
-          {n}
-        </p>
-      ))}
       <div className="modal-footer">
         <button className="button secondary" disabled={busy} onClick={onCancel}>
           取消
@@ -806,6 +808,6 @@ export function ApplyReview({
           <Check size={16} />
         </button>
       </div>
-    </>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ use crate::{
     adapters::{self, Change},
     files::{self, Snapshot},
     import,
+    mcp::{self, McpDraft, McpSummary, McpTarget},
     model::{AgentKind, AppResult, ModelConfig},
     paths::{AgentPath, Paths, Settings},
 };
@@ -60,6 +61,9 @@ struct Pending {
     dependencies: Vec<Snapshot>,
     created_at: u64,
     workbuddy_model_id: Option<String>,
+    result_message: String,
+    project_mcp_secrets: Vec<mcp::ProjectSecret>,
+    mcp_connector_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -280,6 +284,52 @@ impl Engine {
         self.save(&store)
     }
 
+    /// Return only credential-free MCP records for the connector page.
+    pub fn mcp_list(&self) -> AppResult<Vec<McpSummary>> {
+        mcp::list(&self.paths)
+    }
+
+    /// Save one MCP connector in the separate private library.
+    pub fn mcp_upsert(&mut self, draft: McpDraft) -> AppResult<McpSummary> {
+        let saved = mcp::upsert(&self.paths, draft)?;
+        self.pending
+            .retain(|_, pending| pending.mcp_connector_id.as_deref() != Some(saved.id.as_str()));
+        Ok(saved)
+    }
+
+    /// Remove a library connector without changing already applied Agent files.
+    pub fn mcp_delete(&mut self, id: &str) -> AppResult<()> {
+        mcp::delete(&self.paths, id)?;
+        self.pending
+            .retain(|_, pending| pending.mcp_connector_id.as_deref() != Some(id));
+        Ok(())
+    }
+
+    /// Prepare native MCP config changes for the existing guarded backup transaction.
+    pub fn preview_mcp_apply(
+        &mut self,
+        id: &str,
+        targets: &[McpTarget],
+        project_dir: Option<&std::path::Path>,
+    ) -> AppResult<ApplyPreview> {
+        let connector = mcp::get(&self.paths, id)?;
+        let settings = self.current_settings()?;
+        let projection = mcp::project(&self.paths, &settings, &connector, targets, project_dir)?;
+        let preview = self.prepare(
+            format!("应用 MCP · {}", connector.name),
+            projection.changes,
+            vec![],
+            projection.notices,
+            None,
+            "MCP 配置已写入，请按提示重启或信任连接器。".into(),
+        )?;
+        if let Some(pending) = self.pending.get_mut(&preview.token) {
+            pending.project_mcp_secrets = projection.project_secrets;
+            pending.mcp_connector_id = Some(connector.id);
+        }
+        Ok(preview)
+    }
+
     /// Validate and persist explicit target-path and appearance preferences.
     pub fn settings(&mut self, settings: Settings) -> AppResult<()> {
         if !["light", "dark", "system"].contains(&settings.theme.as_str()) {
@@ -366,6 +416,7 @@ impl Engine {
             dependencies,
             notices,
             select_workbuddy_model.then_some(model.model_id),
+            "配置已写入，尚未验证模型调用。".into(),
         )
     }
 
@@ -377,6 +428,7 @@ impl Engine {
         dependencies: Vec<Snapshot>,
         notices: Vec<String>,
         workbuddy_model_id: Option<String>,
+        result_message: String,
     ) -> AppResult<ApplyPreview> {
         self.pending
             .retain(|_, p| now().saturating_sub(p.created_at) < 600);
@@ -417,6 +469,9 @@ impl Engine {
                 dependencies,
                 created_at: now(),
                 workbuddy_model_id,
+                result_message,
+                project_mcp_secrets: vec![],
+                mcp_connector_id: None,
             },
         );
         Ok(ApplyPreview {
@@ -446,6 +501,9 @@ impl Engine {
         let p = self.pending.remove(token).ok_or("预览已失效，请重新预览")?;
         if now().saturating_sub(p.created_at) >= 600 {
             return Err("预览已过期，请重新预览".into());
+        }
+        for check in &p.project_mcp_secrets {
+            mcp::check_project_secret(check)?;
         }
         for snapshot in p
             .changes
@@ -482,6 +540,13 @@ impl Engine {
         let mut attempted = 0;
         let operation: AppResult<()> = (|| {
             for (index, c) in p.changes.iter().enumerate() {
+                for check in p
+                    .project_mcp_secrets
+                    .iter()
+                    .filter(|check| check.path == c.before.path)
+                {
+                    mcp::check_project_secret(check)?;
+                }
                 if !c.before.unchanged()? {
                     return Err(format!("写入前发现外部修改：{}", c.before.path.display()));
                 }
@@ -535,7 +600,7 @@ impl Engine {
         Ok(ApplyResult {
             backup_id: id,
             paths: backup.record.paths,
-            message: "配置已写入，尚未验证模型调用。".into(),
+            message: p.result_message,
             workbuddy_selection: None,
             workbuddy_model_id: p.workbuddy_model_id,
         })
@@ -630,6 +695,7 @@ impl Engine {
             vec![],
             vec!["恢复将覆盖这些文件的当前内容；确认后会先备份当前状态。".into()],
             None,
+            "配置已恢复，请在 Agent 中验证。".into(),
         )
     }
 
@@ -840,7 +906,14 @@ mod tests {
             })
             .collect();
         let p = engine
-            .prepare("test".into(), changes, vec![], vec![], Some("model".into()))
+            .prepare(
+                "test".into(),
+                changes,
+                vec![],
+                vec![],
+                Some("model".into()),
+                "test".into(),
+            )
             .unwrap();
         let mut writes = 0;
         let error = engine

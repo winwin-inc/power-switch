@@ -294,7 +294,14 @@ fn redact_value(value: &mut serde_json::Value) {
         serde_json::Value::Object(map) => {
             for (key, v) in map.iter_mut() {
                 let k = key.to_ascii_lowercase().replace(['_', '-'], "");
-                if [
+                if matches!(k.as_str(), "headers" | "httpheaders") && v.is_object() {
+                    // Preserve header names so MCP previews show the complete configuration shape.
+                    if let Some(headers) = v.as_object_mut() {
+                        for credential in headers.values_mut() {
+                            *credential = serde_json::Value::String("••••••••".into());
+                        }
+                    }
+                } else if [
                     "key",
                     "token",
                     "secret",

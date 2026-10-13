@@ -4,6 +4,7 @@ mod desktop;
 pub mod engine;
 pub mod files;
 pub mod import;
+pub mod mcp;
 pub mod model;
 pub mod model_catalog;
 pub mod model_probe;
