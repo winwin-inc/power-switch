@@ -87,6 +87,7 @@ wheels/
 .env*
 *.env
 *.env.*
+.mcp.json
 *.local
 *.key
 *.pem

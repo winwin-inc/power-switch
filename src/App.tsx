@@ -46,6 +46,7 @@ import {
 } from "./updater";
 import { pickLocalPath } from "./file-picker";
 import { SkillsPage } from "./SkillsPage";
+import { McpPage } from "./McpPage";
 import { NewApiDialog } from "./NewApiDialog";
 import { NewcomerGuide } from "./NewcomerGuide";
 import {
@@ -76,7 +77,7 @@ import {
 
 const isStoreBuild = import.meta.env.VITE_STORE_MSIX === "1";
 
-type Page = "models" | "backups" | "settings" | "skills";
+type Page = "models" | "backups" | "settings" | "skills" | "mcp";
 type ModalState =
   | { kind: "guide" }
   | { kind: "new-api" }
@@ -368,6 +369,7 @@ export default function App() {
     backups: "模型配置备份",
     settings: "设置",
     skills: "技能",
+    mcp: "MCP 连接器",
   };
 
   return (
@@ -406,9 +408,12 @@ export default function App() {
             <BookOpen size={19} />
             SKILL 技能<span className="nav-pending">待开放</span>
           </button>
-          <button className="nav-item" disabled title="待开放">
+          <button
+            className={page === "mcp" ? "nav-item active" : "nav-item"}
+            onClick={() => setPage("mcp")}
+          >
             <Cable size={19} />
-            MCP 连接器<span className="nav-pending">待开放</span>
+            MCP 连接器
           </button>
           <button
             className={page === "settings" ? "nav-item active" : "nav-item"}
@@ -957,6 +962,7 @@ export default function App() {
                 </>
               )}
               {page === "skills" && <SkillsPage />}
+              {page === "mcp" && <McpPage />}
               {page === "settings" && (
                 <SettingsPage
                   data={data}

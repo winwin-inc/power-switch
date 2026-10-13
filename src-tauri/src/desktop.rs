@@ -1,5 +1,6 @@
 use crate::{
     engine::{AppData, ApplyPreview, ApplyResult, Engine, ImportPreview},
+    mcp::{self, McpDraft, McpSummary, McpTarget, McpTestResult},
     model::{AgentKind, AppResult, ModelConfig},
     paths::{Paths, Settings},
 };
@@ -150,6 +151,44 @@ async fn list_models(connection: crate::model_catalog::ModelConnection) -> AppRe
 #[tauri::command]
 fn delete_model(state: Shared<'_>, id: String) -> AppResult<()> {
     with_engine(state, |e| e.delete(&id))
+}
+
+/// Read MCP connector metadata without returning stored tokens.
+#[tauri::command]
+fn mcp_list(state: Shared<'_>) -> AppResult<Vec<McpSummary>> {
+    with_engine(state, |e| e.mcp_list())
+}
+
+/// Save one connector with its literal endpoint and token in private app storage.
+#[tauri::command]
+fn mcp_save(state: Shared<'_>, draft: McpDraft) -> AppResult<McpSummary> {
+    with_engine(state, |e| e.mcp_upsert(draft))
+}
+
+/// Delete a connector record, leaving Agent configurations under their own lifecycle.
+#[tauri::command]
+fn mcp_delete(state: Shared<'_>, id: String) -> AppResult<()> {
+    with_engine(state, |e| e.mcp_delete(&id))
+}
+
+/// Test only MCP initialization and tools/list, without calling business tools.
+#[tauri::command]
+async fn mcp_test(state: Shared<'_>, draft: McpDraft) -> AppResult<McpTestResult> {
+    let connector = with_engine(state, |e| mcp::resolve(&e.paths, draft))?;
+    mcp::test(connector).await
+}
+
+/// Prepare native Agent MCP files using the existing credential-redacted preview flow.
+#[tauri::command]
+fn mcp_preview_apply(
+    state: Shared<'_>,
+    id: String,
+    targets: Vec<McpTarget>,
+    project_dir: Option<std::path::PathBuf>,
+) -> AppResult<ApplyPreview> {
+    with_engine(state, |e| {
+        e.preview_mcp_apply(&id, &targets, project_dir.as_deref())
+    })
 }
 /// Update appearance, config locations and update-channel preferences.
 #[tauri::command]
@@ -321,6 +360,11 @@ pub fn run() {
             test_model,
             list_models,
             delete_model,
+            mcp_list,
+            mcp_save,
+            mcp_delete,
+            mcp_test,
+            mcp_preview_apply,
             save_settings,
             save_new_api_url,
             preview_apply,

@@ -7,6 +7,17 @@
     "core:default",
     "deep-link:default",
     "dialog:allow-open",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://x.brandct.com/generalSettings/personalAccessTokens"
+        },
+        {
+          "url": "https://lightdash.banmahui.cn/generalSettings/personalAccessTokens"
+        }
+      ]
+    },
     "process:allow-restart"
   ]
 }
