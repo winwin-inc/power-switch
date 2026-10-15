@@ -2,6 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 
+export type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "available"; version: string }
+  | { kind: "installing"; percentage: number | null }
+  | { kind: "ready" }
+  | { kind: "error"; message: string };
+
 /** Query only release metadata through the channel selected in saved settings. */
 export async function checkForUpdate(): Promise<{
   version: string;

@@ -36,14 +36,16 @@ it("uses Microsoft Store updates instead of the GitHub updater", async () => {
   });
   const { default: App } = await import("../App");
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+  fireEvent.click(await screen.findByRole("button", { name: "关于" }));
   expect(
     screen.getByText(
       "此版本由 Microsoft Store 管理更新，请在商店中查看新版本。",
     ),
   ).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "检查更新" })).toBeNull();
-  expect(screen.queryByRole("switch", { name: "自动更新" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "启动时检查更新" })).toBeNull();
+  expect(screen.getByRole("link", { name: "GitHub" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "更新日志" })).toBeInTheDocument();
   await waitFor(() => expect(apiData).toHaveBeenCalledOnce());
   await new Promise((resolve) => setTimeout(resolve, 1900));
   expect(checkForUpdate).not.toHaveBeenCalled();

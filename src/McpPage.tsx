@@ -113,7 +113,9 @@ function editDraft(summary: McpSummary): McpDraft {
 }
 
 /** Manage connector records, connection checks, and guarded Agent application. */
-export function McpPage() {
+export function McpPage({
+  onApplied,
+}: { onApplied?: () => Promise<void> } = {}) {
   const [connectors, setConnectors] = useState<McpSummary[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [draft, setDraft] = useState<McpDraft>(emptyMcpDraft);
@@ -280,7 +282,7 @@ export function McpPage() {
     }
   }
 
-  /** Commit only the current preview, then show the native restart or trust notices. */
+  /** Commit the reviewed config and refresh parent backup data without hiding a successful write on refresh failure. */
   async function confirmApply() {
     if (dialog?.kind !== "review" || busy) return;
     const preview = dialog.preview;
@@ -290,8 +292,13 @@ export function McpPage() {
       const result = await mcpApi.apply(preview.token);
       setDialog(null);
       setMessage(
-        `${result.message} 已备份 ${result.paths.length} 个配置文件。${preview.notices.join(" ")}`,
+        `${result.message} 已更新 ${result.paths.length} 个配置文件。${preview.notices.join(" ")}`,
       );
+      try {
+        await onApplied?.();
+      } catch (refreshError) {
+        setError(`配置已应用，但备份列表刷新失败：${String(refreshError)}`);
+      }
     } catch (e) {
       setDialog(null);
       setError(String(e));
@@ -626,7 +633,7 @@ export function McpPage() {
       {dialog?.kind === "apply" && (
         <Modal
           title={`应用 ${dialog.connector.name}`}
-          description="选择要复制配置的 Agent。确认前会预览并备份目标文件。"
+          description="选择要复制配置的 Agent。预览目标文件后，确认覆盖相关内容。"
           onClose={closeDialog}
           busy={busy}
         >

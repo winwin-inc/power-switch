@@ -552,6 +552,90 @@ describe("temporary model test feedback", () => {
 });
 
 describe("settings and backup controls", () => {
+  /** 验证单平台、多平台、历史备份的筛选，并确保不沿用模型库筛选。 */
+  it("filters backups by platform independently of the model library", async () => {
+    const common = { createdAt: 1790035200, status: "completed" };
+    vi.mocked(api.data).mockResolvedValue({
+      ...data,
+      backups: [
+        {
+          ...common,
+          id: "wb",
+          title: "WorkBuddy 备份",
+          paths: ["/custom/wb.json"],
+          agents: ["workbuddy"],
+        },
+        {
+          ...common,
+          id: "claude",
+          title: "Claude 备份",
+          paths: ["/custom/claude.json"],
+          agents: ["claude"],
+        },
+        {
+          ...common,
+          id: "shared",
+          title: "联合备份",
+          paths: ["/custom/a", "/custom/b"],
+          agents: ["workbuddy", "codex"],
+        },
+        {
+          ...common,
+          id: "legacy",
+          title: "历史备份",
+          paths: ["/home/.codex/auth.json", "/home/.codex/config.toml"],
+        },
+        {
+          ...common,
+          id: "unknown",
+          title: "未知备份",
+          paths: ["/old/custom.json"],
+        },
+      ],
+    });
+    render(<App />);
+    await screen.findByText("我的模型");
+    await userEvent.click(screen.getByRole("button", { name: "Claude Code" }));
+    await userEvent.click(screen.getByRole("button", { name: "模型配置备份" }));
+    const all = screen.getByRole("button", { name: /^全部/ });
+    expect(all).toHaveAttribute("aria-pressed", "true");
+    expect(all).toHaveTextContent("5");
+    expect(screen.getAllByRole("article")).toHaveLength(5);
+
+    await userEvent.click(screen.getByRole("button", { name: "WorkBuddy" }));
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.getByText("WorkBuddy 备份")).toBeVisible();
+    expect(screen.getByText("联合备份")).toBeVisible();
+    expect(screen.queryByText("Claude 备份")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Codex" }));
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.getByText("联合备份")).toBeVisible();
+    expect(screen.getByText("历史备份")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Claude Code" }));
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByText("Claude 备份")).toBeVisible();
+    await userEvent.click(all);
+    expect(screen.getAllByRole("article")).toHaveLength(5);
+  });
+
+  /** 某平台没有备份时显示对应空态，允许随时切回全部。 */
+  it("shows a platform-specific empty state", async () => {
+    render(<App />);
+    await screen.findByText("我的模型");
+    await userEvent.click(screen.getByRole("button", { name: "模型配置备份" }));
+    await userEvent.click(screen.getByRole("button", { name: "Codex" }));
+    expect(
+      screen.getByRole("heading", { name: "还没有 Codex 的模型配置备份" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "清空备份" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: /^全部/ }));
+    expect(
+      screen.getByRole("heading", { name: "还没有模型配置备份" }),
+    ).toBeVisible();
+  });
+
   /** Verify that every available module heading contains only its title. */
   it("shows module headings without a trailing dot", async () => {
     render(<App />);
@@ -691,6 +775,125 @@ describe("settings and backup controls", () => {
   });
 });
 
+describe("Claude 1M apply option", () => {
+  it.each([
+    ["auto", true],
+    ["auto-v", true],
+    ["fast", true],
+    ["glm-5.2", true],
+    ["glm-5.3", true],
+    ["glm-5.3-flash", true],
+    ["MiniMax-M3", true],
+    ["MiniMax-M3.1-Flash-Preview", true],
+    ["MiniMax-M2.7-highspeed", false],
+    ["k3", false],
+    ["future-model", true],
+    ["k3-preview", true],
+    ["K3", true],
+  ])("defaults %s to %s", (modelId, enabled) => {
+    render(
+      <AgentPicker
+        model={{ ...sample, protocol: "anthropic-messages", modelId }}
+        onPreview={vi.fn()}
+        busy={false}
+      />,
+    );
+    const option = screen.getByRole("checkbox", { name: /是否 1M模型/ });
+    expect(option).toBeEnabled();
+    if (enabled) expect(option).toBeChecked();
+    else expect(option).not.toBeChecked();
+  });
+
+  it.each(["MiniMax-M2.7-highspeed", "k3", "glm-5.3"])(
+    "passes a manual override for %s and resets it on reopening",
+    async (modelId) => {
+      const next = vi.fn();
+      const initial = {
+        ...sample,
+        protocol: "anthropic-messages" as const,
+        modelId,
+      };
+      const { unmount } = render(
+        <AgentPicker model={initial} onPreview={next} busy={false} />,
+      );
+      const option = screen.getByRole("checkbox", { name: /是否 1M模型/ });
+      const enabled = (option as HTMLInputElement).checked;
+      await userEvent.click(option);
+      await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
+      expect(next).toHaveBeenCalledWith(["claude"], false, !enabled);
+      expect(initial.modelId).toBe(modelId);
+      unmount();
+      render(<AgentPicker model={initial} onPreview={next} busy={false} />);
+      expect(
+        screen.getByRole("checkbox", { name: /是否 1M模型/ }),
+      ).toHaveProperty("checked", enabled);
+    },
+  );
+
+  it("disables the option while Claude is deselected or a preview is loading", async () => {
+    const props = {
+      model: { ...sample, protocol: "anthropic-messages" as const },
+      onPreview: vi.fn(),
+    };
+    const { rerender } = render(<AgentPicker {...props} busy={false} />);
+    const claude = screen.getByRole("checkbox", { name: /Claude Code/ });
+    const option = screen.getByRole("checkbox", { name: /是否 1M模型/ });
+    await userEvent.click(claude);
+    expect(option).toBeDisabled();
+    expect(screen.getByRole("button", { name: "预览变更" })).toBeDisabled();
+    await userEvent.click(claude);
+    expect(option).toBeEnabled();
+    rerender(<AgentPicker {...props} busy={true} />);
+    expect(option).toBeDisabled();
+  });
+
+  it.each(["openai-chat", "openai-responses"] as const)(
+    "hides the option for %s",
+    (protocol) => {
+      render(
+        <AgentPicker
+          model={{ ...sample, protocol }}
+          onPreview={vi.fn()}
+          busy={false}
+        />,
+      );
+      expect(
+        screen.queryByRole("checkbox", { name: /是否 1M模型/ }),
+      ).toBeNull();
+    },
+  );
+
+  it("forwards the current selection through App without saving or testing the model", async () => {
+    vi.mocked(api.data).mockResolvedValue({
+      ...data,
+      models: [{ ...sample, protocol: "anthropic-messages" }],
+    });
+    vi.mocked(api.preview).mockResolvedValue(preview);
+    render(<App />);
+    await screen.findByText("我的模型");
+    await userEvent.click(screen.getByRole("button", { name: "应用到 Agent" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: /是否 1M模型/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "关闭弹窗" }));
+    await userEvent.click(screen.getByRole("button", { name: "应用到 Agent" }));
+    expect(screen.getByRole("checkbox", { name: /是否 1M模型/ })).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
+    expect(api.preview).toHaveBeenLastCalledWith("1", ["claude"], false, true);
+    await screen.findByRole("button", { name: "确认覆盖应用" });
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    await userEvent.click(screen.getByRole("button", { name: "应用到 Agent" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: /是否 1M模型/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
+    expect(api.preview).toHaveBeenLastCalledWith("1", ["claude"], false, false);
+    expect(api.save).not.toHaveBeenCalled();
+    expect(api.testModel).not.toHaveBeenCalled();
+    expect(api.apply).not.toHaveBeenCalled();
+  });
+});
+
 describe("confirmation boundary", () => {
   it("disables incompatible Agent checkboxes", async () => {
     const next = vi.fn();
@@ -705,7 +908,7 @@ describe("confirmation boundary", () => {
         name: /写入后打开 WorkBuddy 新建任务页/,
       }),
     ).toBeChecked();
-    expect(next).toHaveBeenCalledWith(["workbuddy"], true);
+    expect(next).toHaveBeenCalledWith(["workbuddy"], true, undefined);
   });
   it("allows Codex only for its native Responses protocol", async () => {
     const next = vi.fn();
@@ -720,7 +923,7 @@ describe("confirmation boundary", () => {
     expect(codex).toBeEnabled();
     expect(codex).toBeChecked();
     await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
-    expect(next).toHaveBeenCalledWith(["codex"], false);
+    expect(next).toHaveBeenCalledWith(["codex"], false, undefined);
   });
   it("allows opting out and resets the default after reselecting WorkBuddy", async () => {
     const next = vi.fn();
@@ -733,14 +936,14 @@ describe("confirmation boundary", () => {
     });
     await userEvent.click(autoSelect);
     await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
-    expect(next).toHaveBeenLastCalledWith(["workbuddy"], false);
+    expect(next).toHaveBeenLastCalledWith(["workbuddy"], false, undefined);
     await userEvent.click(workbuddy);
     expect(autoSelect).toBeDisabled();
     expect(autoSelect).not.toBeChecked();
     await userEvent.click(workbuddy);
     expect(autoSelect).toBeChecked();
     await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
-    expect(next).toHaveBeenLastCalledWith(["workbuddy"], true);
+    expect(next).toHaveBeenLastCalledWith(["workbuddy"], true, undefined);
   });
   it("shows the WorkBuddy post-write action in the second confirmation", () => {
     render(
@@ -773,9 +976,7 @@ describe("confirmation boundary", () => {
     await userEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(confirm).not.toHaveBeenCalled();
     expect(cancel).toHaveBeenCalledOnce();
-    await userEvent.click(
-      screen.getByRole("button", { name: "确认覆盖并备份" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "确认覆盖应用" }));
     expect(confirm).toHaveBeenCalledOnce();
   });
   it("never writes while opening and canceling a preview", async () => {
@@ -784,7 +985,7 @@ describe("confirmation boundary", () => {
     await screen.findByText("我的模型");
     await userEvent.click(screen.getByRole("button", { name: "应用到 Agent" }));
     await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
-    await screen.findByRole("button", { name: "确认覆盖并备份" });
+    await screen.findByRole("button", { name: "确认覆盖应用" });
     expect(api.apply).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(api.cancel).toHaveBeenCalledWith("preview-1");
@@ -807,10 +1008,8 @@ describe("confirmation boundary", () => {
     await screen.findByText("我的模型");
     await userEvent.click(screen.getByRole("button", { name: "应用到 Agent" }));
     await userEvent.click(screen.getByRole("button", { name: "预览变更" }));
-    expect(api.preview).toHaveBeenCalledWith("1", ["codex"], false);
-    await userEvent.click(
-      screen.getByRole("button", { name: "确认覆盖并备份" }),
-    );
+    expect(api.preview).toHaveBeenCalledWith("1", ["codex"], false, undefined);
+    await userEvent.click(screen.getByRole("button", { name: "确认覆盖应用" }));
     await screen.findByText("已应用");
     expect(api.testModel).not.toHaveBeenCalled();
   });

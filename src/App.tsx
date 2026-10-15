@@ -16,6 +16,7 @@ import {
   Download,
   ExternalLink,
   FileClock,
+  Info,
   FlaskConical,
   FolderCog,
   FolderOpen,
@@ -39,12 +40,15 @@ import {
 } from "lucide-react";
 import packageJson from "../package.json";
 import { api, isDesktop } from "./api";
+import { backupAgents } from "./backup-platform";
 import {
   checkForUpdate,
   installPendingUpdate,
   restartUpdatedApp,
+  type UpdateState,
 } from "./updater";
 import { pickLocalPath } from "./file-picker";
+import { AboutPage } from "./AboutPage";
 import { SkillsPage } from "./SkillsPage";
 import { McpPage } from "./McpPage";
 import { NewApiDialog } from "./NewApiDialog";
@@ -66,6 +70,7 @@ import {
   modelTestSuccess,
   protocolLabels,
   type AppData,
+  type AgentKind,
   type ApplyPreview,
   type BackupRecord,
   type ImportPreview,
@@ -77,7 +82,7 @@ import {
 
 const isStoreBuild = import.meta.env.VITE_STORE_MSIX === "1";
 
-type Page = "models" | "backups" | "settings" | "skills" | "mcp";
+type Page = "models" | "backups" | "settings" | "about" | "skills" | "mcp";
 type ModalState =
   | { kind: "guide" }
   | { kind: "new-api" }
@@ -94,13 +99,6 @@ type ModalState =
   | { kind: "update-confirm"; version: string }
   | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
-type UpdateState =
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "available"; version: string }
-  | { kind: "installing"; percentage: number | null }
-  | { kind: "ready" }
-  | { kind: "error"; message: string };
 
 /** Coordinate desktop state and the explicitly confirmed model/apply/import workflows. */
 export default function App() {
@@ -112,6 +110,7 @@ export default function App() {
   const [page, setPage] = useState<Page>("models");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [backupFilter, setBackupFilter] = useState<"all" | AgentKind>("all");
   const [modal, setModal] = useState<ModalState>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNoticeState] = useState<Notice>(null);
@@ -364,10 +363,16 @@ export default function App() {
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
+  const visibleBackups = (data?.backups ?? []).filter(
+    (backup) =>
+      backupFilter === "all" ||
+      backupAgents(backup, data?.agents ?? []).includes(backupFilter),
+  );
   const titles = {
     models: "模型库",
     backups: "模型配置备份",
     settings: "设置",
+    about: "关于",
     skills: "技能",
     mcp: "MCP 连接器",
   };
@@ -421,6 +426,13 @@ export default function App() {
           >
             <Settings2 size={19} />
             设置
+          </button>
+          <button
+            className={page === "about" ? "nav-item active" : "nav-item"}
+            onClick={() => setPage("about")}
+          >
+            <Info size={19} />
+            关于
           </button>
         </nav>
         <div className="sidebar-bottom">
@@ -877,6 +889,23 @@ export default function App() {
               {page === "backups" && (
                 <>
                   <div className="backup-toolbar">
+                    <div className="filter-tabs" aria-label="备份按平台筛选">
+                      {(["all", "workbuddy", "claude", "codex"] as const).map(
+                        (value) => (
+                          <button
+                            key={value}
+                            className={backupFilter === value ? "selected" : ""}
+                            aria-pressed={backupFilter === value}
+                            onClick={() => setBackupFilter(value)}
+                          >
+                            {value === "all" ? "全部" : agentLabels[value]}
+                            {value === "all" && (
+                              <span>{data.backups.length}</span>
+                            )}
+                          </button>
+                        ),
+                      )}
+                    </div>
                     <button
                       className="button danger"
                       disabled={busy || data.backups.length === 0}
@@ -892,9 +921,9 @@ export default function App() {
                       每次确认写入前，自动保存原始文件。恢复前也会创建一份新备份。
                     </span>
                   </div>
-                  {data.backups.length ? (
+                  {visibleBackups.length ? (
                     <div className="backup-list">
-                      {data.backups.map((backup) => (
+                      {visibleBackups.map((backup) => (
                         <article className="backup-row" key={backup.id}>
                           <span className="backup-icon">
                             <FileClock size={22} />
@@ -955,14 +984,22 @@ export default function App() {
                       <div className="empty-icon">
                         <FileClock size={30} />
                       </div>
-                      <h2>还没有模型配置备份</h2>
-                      <p>第一次应用模型后，备份就会出现在这里。</p>
+                      <h2>
+                        {backupFilter === "all"
+                          ? "还没有模型配置备份"
+                          : `还没有 ${agentLabels[backupFilter]} 的模型配置备份`}
+                      </h2>
+                      <p>
+                        {backupFilter === "all"
+                          ? "第一次应用模型后，备份就会出现在这里。"
+                          : "向该平台应用模型后，备份就会出现在这里。"}
+                      </p>
                     </div>
                   )}
                 </>
               )}
               {page === "skills" && <SkillsPage />}
-              {page === "mcp" && <McpPage />}
+              {page === "mcp" && <McpPage onApplied={refresh} />}
               {page === "settings" && (
                 <SettingsPage
                   data={data}
@@ -991,6 +1028,14 @@ export default function App() {
                       setNotice({ kind: "success", text: "设置已保存。" });
                     })
                   }
+                />
+              )}
+              {page === "about" && (
+                <AboutPage
+                  settings={data.settings}
+                  busy={busy}
+                  isStoreBuild={isStoreBuild}
+                  onError={(text) => setNotice({ kind: "error", text })}
                   onUpdateSave={(preferences) =>
                     void run(async () => {
                       await api.settings({ ...data.settings, ...preferences });
@@ -1120,7 +1165,7 @@ export default function App() {
           <AgentPicker
             model={modal.model}
             busy={busy}
-            onPreview={(agents, selectWorkbuddyModel) =>
+            onPreview={(agents, selectWorkbuddyModel, claude1m) =>
               void run(async () =>
                 setModal({
                   kind: "review",
@@ -1128,6 +1173,7 @@ export default function App() {
                     modal.model.id,
                     agents,
                     selectWorkbuddyModel,
+                    claude1m,
                   ),
                 }),
               )
@@ -1532,21 +1578,11 @@ function SettingsPage({
   busy,
   onThemeSave,
   onSave,
-  onUpdateSave,
-  onCheckUpdate,
-  updateState,
-  onShowUpdate,
 }: {
   data: AppData;
   busy: boolean;
   onThemeSave: (theme: Settings["theme"]) => void;
   onSave: (settings: Settings) => void;
-  onUpdateSave: (
-    preferences: Pick<Settings, "autoUpdate" | "receiveRc">,
-  ) => void;
-  onCheckUpdate: () => void;
-  updateState: UpdateState;
-  onShowUpdate: () => void;
 }) {
   const [settings, setSettings] = useState(data.settings);
   const [pickerError, setPickerError] = useState("");
@@ -1708,110 +1744,6 @@ function SettingsPage({
         </div>
         <code>{data.dataDir}</code>
       </section>
-      {isStoreBuild ? (
-        <section className="settings-section">
-          <div className="section-title">
-            <RotateCw size={19} />
-            <div>
-              <h2>软件更新</h2>
-              <p>此版本由 Microsoft Store 管理更新，请在商店中查看新版本。</p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="settings-section">
-          <div className="section-title update-section-title">
-            <RotateCw size={19} />
-            <div>
-              <h2>软件更新</h2>
-              <p>检查更新只获取版本信息；下载安装始终需要你确认。</p>
-            </div>
-            <button
-              type="button"
-              className="button secondary"
-              disabled={
-                busy ||
-                !isDesktop ||
-                updateState.kind === "checking" ||
-                updateState.kind === "installing" ||
-                updateState.kind === "ready"
-              }
-              onClick={onCheckUpdate}
-            >
-              {updateState.kind === "checking" ? "正在检查" : "检查更新"}
-            </button>
-          </div>
-          <div className="update-preference-row">
-            <div>
-              <strong>自动更新</strong>
-              <p>启动时自动检查新版本，不会自动下载。</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-label="自动更新"
-              aria-checked={data.settings.autoUpdate}
-              className="settings-switch"
-              disabled={
-                busy ||
-                updateState.kind === "installing" ||
-                updateState.kind === "ready"
-              }
-              onClick={() =>
-                onUpdateSave({
-                  autoUpdate: !data.settings.autoUpdate,
-                  receiveRc: data.settings.autoUpdate
-                    ? false
-                    : data.settings.receiveRc,
-                })
-              }
-            >
-              <span />
-            </button>
-          </div>
-          <div className="update-preference-row">
-            <div>
-              <strong>测试计划</strong>
-              <p>开启后接收 RC 版本；关闭后只接收正式版。</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-label="测试计划"
-              aria-checked={data.settings.receiveRc}
-              className="settings-switch"
-              disabled={
-                busy ||
-                !data.settings.autoUpdate ||
-                updateState.kind === "installing" ||
-                updateState.kind === "ready"
-              }
-              onClick={() =>
-                onUpdateSave({
-                  autoUpdate: true,
-                  receiveRc: !data.settings.receiveRc,
-                })
-              }
-            >
-              <span />
-            </button>
-          </div>
-          {updateState.kind === "available" && (
-            <button
-              type="button"
-              className="button secondary update-available-button"
-              onClick={onShowUpdate}
-            >
-              发现 v{updateState.version}，查看更新
-            </button>
-          )}
-          {updateState.kind === "error" && (
-            <p role="status" className="update-error-text">
-              {updateState.message}
-            </p>
-          )}
-        </section>
-      )}
       <div className="settings-actions">
         <span>
           <ArrowDownToLine size={15} />

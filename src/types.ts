@@ -66,6 +66,7 @@ export interface BackupRecord {
   createdAt: number;
   status: string;
   paths: string[];
+  agents?: AgentKind[];
 }
 export interface AppData {
   models: ModelConfig[];
@@ -125,6 +126,11 @@ export const nativeAgent: Record<Protocol, AgentKind> = {
   "anthropic-messages": "claude",
 };
 export const defaultContextWindow = 1_000_000;
+
+/** Default new and existing models to Claude 1M mode except the two exact exclusions. */
+export function defaultClaude1m(modelId: string): boolean {
+  return !["MiniMax-M2.7-highspeed", "k3"].includes(modelId);
+}
 
 /** Return an independent model draft with the default context window. */
 export function newModel(): ModelConfig {

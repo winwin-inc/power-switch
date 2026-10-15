@@ -3,6 +3,11 @@ use url::Url;
 
 pub type AppResult<T> = Result<T, String>;
 
+/// Default Claude 1M mode to enabled for every model except the two exact exclusions.
+pub fn default_claude_1m(model_id: &str) -> bool {
+    !matches!(model_id, "MiniMax-M2.7-highspeed" | "k3")
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Protocol {
     #[serde(rename = "openai-chat")]

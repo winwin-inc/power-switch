@@ -15,6 +15,12 @@
         },
         {
           "url": "https://lightdash.banmahui.cn/generalSettings/personalAccessTokens"
+        },
+        {
+          "url": "https://github.com/winwin-inc/power-switch"
+        },
+        {
+          "url": "https://github.com/winwin-inc/power-switch/releases/tag/v*"
         }
       ]
     },

@@ -280,55 +280,71 @@ describe("MCP connector page", () => {
     expect(screen.queryByText("ldpat-TEST")).not.toBeInTheDocument();
   });
 
-  it("reviews selected Agent files before writing and prompts for an untested connector", async () => {
-    const user = userEvent.setup();
-    vi.mocked(mcpApi.list).mockResolvedValue([connector]);
-    vi.mocked(mcpApi.preview).mockResolvedValue({
-      token: "preview-1",
-      title: "应用 MCP · 马上赢 X 平台",
-      files: [
-        {
-          path: "/work/project/.mcp.json",
-          before: "（文件不存在）",
-          after: '{"x-api-key":"••••••••"}',
-          fingerprint: "hash",
-        },
-      ],
-      notices: ["Claude Code 首次使用时需要信任连接器。"],
-    });
-    vi.mocked(mcpApi.apply).mockResolvedValue({
-      backupId: "backup-1",
-      paths: ["/work/project/.mcp.json"],
-      message: "MCP 配置已写入。",
-    });
-    render(<McpPage />);
-    await user.click(
-      await screen.findByRole("button", { name: "应用到 Agent" }),
-    );
-    expect(screen.getByText(/尚未测试通过/)).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Claude Code" }));
-    await user.click(screen.getByRole("checkbox", { name: /项目级/ }));
-    await user.click(screen.getByRole("button", { name: "选择" }));
-    await waitFor(() =>
-      expect(screen.getByPlaceholderText("选择项目根目录")).toHaveValue(
-        "/work/project",
-      ),
-    );
-    await user.click(screen.getByRole("button", { name: "预览变更" }));
-    await waitFor(() =>
-      expect(mcpApi.preview).toHaveBeenCalledWith(
-        "c-1",
-        ["claudeProject"],
-        "/work/project",
-      ),
-    );
-    expect(mcpApi.apply).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText("/work/project/.mcp.json"),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "确认覆盖并备份" }));
-    await waitFor(() => expect(mcpApi.apply).toHaveBeenCalledWith("preview-1"));
-  });
+  it.each([false, true])(
+    "refreshes backups after applying the reviewed files (refresh fails: %s)",
+    async (refreshFails) => {
+      const user = userEvent.setup();
+      const onApplied = vi.fn().mockImplementation(async () => {
+        if (refreshFails) throw new Error("读取失败");
+      });
+      vi.mocked(mcpApi.list).mockResolvedValue([connector]);
+      vi.mocked(mcpApi.preview).mockResolvedValue({
+        token: "preview-1",
+        title: "应用 MCP · 马上赢 X 平台",
+        files: [
+          {
+            path: "/work/project/.mcp.json",
+            before: "（文件不存在）",
+            after: '{"x-api-key":"••••••••"}',
+            fingerprint: "hash",
+          },
+        ],
+        notices: ["Claude Code 首次使用时需要信任连接器。"],
+      });
+      vi.mocked(mcpApi.apply).mockResolvedValue({
+        backupId: "backup-1",
+        paths: ["/work/project/.mcp.json"],
+        message: "MCP 配置已写入。",
+      });
+      render(<McpPage onApplied={onApplied} />);
+      await user.click(
+        await screen.findByRole("button", { name: "应用到 Agent" }),
+      );
+      expect(screen.getByText(/尚未测试通过/)).toBeInTheDocument();
+      await user.click(screen.getByRole("tab", { name: "Claude Code" }));
+      await user.click(screen.getByRole("checkbox", { name: /项目级/ }));
+      await user.click(screen.getByRole("button", { name: "选择" }));
+      await waitFor(() =>
+        expect(screen.getByPlaceholderText("选择项目根目录")).toHaveValue(
+          "/work/project",
+        ),
+      );
+      await user.click(screen.getByRole("button", { name: "预览变更" }));
+      await waitFor(() =>
+        expect(mcpApi.preview).toHaveBeenCalledWith(
+          "c-1",
+          ["claudeProject"],
+          "/work/project",
+        ),
+      );
+      expect(mcpApi.apply).not.toHaveBeenCalled();
+      expect(onApplied).not.toHaveBeenCalled();
+      expect(
+        await screen.findByText("/work/project/.mcp.json"),
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "确认覆盖应用" }));
+      await waitFor(() =>
+        expect(mcpApi.apply).toHaveBeenCalledWith("preview-1"),
+      );
+      await waitFor(() => expect(onApplied).toHaveBeenCalledOnce());
+      expect(screen.getByText(/MCP 配置已写入/)).toBeInTheDocument();
+      if (refreshFails) {
+        expect(
+          await screen.findByText(/配置已应用，但备份列表刷新失败/),
+        ).toBeInTheDocument();
+      }
+    },
+  );
 
   it("cancels an uncommitted preview", async () => {
     const user = userEvent.setup();
@@ -425,8 +441,15 @@ describe("MCP connector page", () => {
     await user.click(screen.getByRole("checkbox", { name: /用户全局/ }));
     await user.click(screen.getByRole("button", { name: "预览变更" }));
     const lastLine = await screen.findByText(/END-OF-CONFIG/);
-    expect(lastLine.textContent).toBe(`${content}\nEND-OF-CONFIG`);
-    const confirm = screen.getByRole("button", { name: "确认覆盖并备份" });
+    expect(lastLine).toHaveTextContent("END-OF-CONFIG");
+    expect(lastLine.closest(".diff-line")).toHaveClass("diff-line-added");
+    expect(
+      lastLine.closest("pre")?.querySelectorAll(".diff-line"),
+    ).toHaveLength(181);
+    expect(
+      lastLine.closest("pre")?.querySelectorAll(".diff-line-added"),
+    ).toHaveLength(1);
+    const confirm = screen.getByRole("button", { name: "确认覆盖应用" });
     expect(confirm.closest(".apply-review-content")).toBeNull();
     expect(lastLine.closest(".apply-review-content")).not.toBeNull();
   });

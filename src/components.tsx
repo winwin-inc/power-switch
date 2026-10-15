@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "./api";
+import { ConfigDiff } from "./ConfigDiff";
 import claudeAgentIcon from "./assets/agents/claude.png";
 import codexAgentIcon from "./assets/agents/codex.png";
 import workbuddyAgentIcon from "./assets/agents/workbuddy.png";
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import {
   agentLabels,
+  defaultClaude1m,
   nativeAgent,
   protocolLabels,
   modelTestKey,
@@ -648,19 +650,26 @@ export function ModelForm({
   );
 }
 
-/** Select native-compatible targets; incompatible protocols are never submitted. */
+/** Select native-compatible targets and transient Claude 1M options for this application. */
 export function AgentPicker({
   model,
   onPreview,
   busy,
 }: {
   model: ModelConfig;
-  onPreview: (agents: AgentKind[], selectWorkbuddyModel: boolean) => void;
+  onPreview: (
+    agents: AgentKind[],
+    selectWorkbuddyModel: boolean,
+    claude1m?: boolean,
+  ) => void;
   busy: boolean;
 }) {
   const native = nativeAgent[model.protocol];
   const [selected, setSelected] = useState<AgentKind[]>([native]);
   const [selectWorkbuddyModel, setSelectWorkbuddyModel] = useState(true);
+  const [claude1m, setClaude1m] = useState(() =>
+    defaultClaude1m(model.modelId),
+  );
   return (
     <>
       <div className="selected-model">
@@ -705,7 +714,7 @@ export function AgentPicker({
                 {compatible && <span className="tag green">兼容</span>}
               </label>
               {agent === "workbuddy" && compatible && (
-                <label className="workbuddy-select-option">
+                <label className="agent-apply-option">
                   <input
                     type="checkbox"
                     checked={
@@ -720,6 +729,20 @@ export function AgentPicker({
                       WorkBuddy 5.6.2
                       已接收但未执行自动选模链接；请在新任务中手动选择此模型，之后会记住该选择。
                     </small>
+                  </span>
+                </label>
+              )}
+              {agent === "claude" && compatible && (
+                <label className="agent-apply-option">
+                  <input
+                    type="checkbox"
+                    checked={claude1m}
+                    disabled={!selected.includes("claude") || busy}
+                    onChange={(e) => setClaude1m(e.target.checked)}
+                  />
+                  <span>
+                    <strong>是否 1M模型</strong>
+                    <small>仅影响写入 Claude 配置的模型 ID</small>
                   </span>
                 </label>
               )}
@@ -739,6 +762,7 @@ export function AgentPicker({
             onPreview(
               selected,
               selected.includes("workbuddy") && selectWorkbuddyModel,
+              selected.includes("claude") ? claude1m : undefined,
             )
           }
         >
@@ -750,7 +774,7 @@ export function AgentPicker({
   );
 }
 
-/** Present redacted before/after data as the only route to a destructive write. */
+/** Present a redacted line diff and require confirmation before applying config changes. */
 export function ApplyReview({
   preview,
   onConfirm,
@@ -769,7 +793,7 @@ export function ApplyReview({
           <AlertTriangle size={20} />
           <div>
             <strong>二次确认：将覆盖以下配置文件中的相关内容</strong>
-            <p>确认前会自动创建备份。请核对路径与变更，密钥已隐藏。</p>
+            <p>请核对路径与变更，密钥已隐藏。红色为删除行，绿色为新增行。</p>
           </div>
         </div>
         <div className="preview-files">
@@ -780,16 +804,7 @@ export function ApplyReview({
                 <span>{file.path}</span>
                 <ChevronDown size={15} />
               </summary>
-              <div className="diff-grid">
-                <div>
-                  <span className="diff-label">变更前</span>
-                  <pre>{file.before}</pre>
-                </div>
-                <div>
-                  <span className="diff-label after">变更后</span>
-                  <pre>{file.after}</pre>
-                </div>
-              </div>
+              <ConfigDiff before={file.before} after={file.after} />
             </details>
           ))}
         </div>
@@ -804,7 +819,7 @@ export function ApplyReview({
           取消
         </button>
         <button className="button primary" disabled={busy} onClick={onConfirm}>
-          {busy ? "正在备份并写入…" : "确认覆盖并备份"}
+          {busy ? "正在写入…" : "确认覆盖应用"}
           <Check size={16} />
         </button>
       </div>
