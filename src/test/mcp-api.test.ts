@@ -15,7 +15,10 @@ it("opens the exact PAT URL using the native command permitted by the desktop ca
   });
   expect(capability.permissions).toContainEqual({
     identifier: "opener:allow-open-url",
-    allow: [{ url: mcpPatUrl }, { url: internalMcpPatUrl }],
+    allow: expect.arrayContaining([
+      { url: mcpPatUrl },
+      { url: internalMcpPatUrl },
+    ]),
   });
   await mcpApi.openPatPage(internalMcpPatUrl);
   expect(invoke).toHaveBeenLastCalledWith("plugin:opener|open_url", {

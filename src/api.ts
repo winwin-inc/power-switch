@@ -42,12 +42,18 @@ export const api = {
   settings: (settings: Settings) => call<void>("save_settings", { settings }),
   /** Persist only the last verified New API instance address. */
   newApiUrl: (url: string) => call<void>("save_new_api_url", { url }),
-  /** Generate the second-confirmation preview. */
-  preview: (id: string, agents: AgentKind[], selectWorkbuddyModel: boolean) =>
+  /** Generate the second-confirmation preview with an optional Claude-only 1M override. */
+  preview: (
+    id: string,
+    agents: AgentKind[],
+    selectWorkbuddyModel: boolean,
+    claude1m?: boolean,
+  ) =>
     call<ApplyPreview>("preview_apply", {
       id,
       agents,
       selectWorkbuddyModel,
+      claude1m,
     }),
   /** Apply only a previously prepared, unmodified preview. */
   apply: (token: string) => call<ApplyResult>("apply_preview", { token }),

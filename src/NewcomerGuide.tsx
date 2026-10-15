@@ -28,7 +28,7 @@ const guideSteps = [
   {
     title: "应用到 Agent",
     detail:
-      "点击模型卡片上的“应用到 Agent”，选择 WorkBuddy，预览配置后确认覆盖并备份。",
+      "点击模型卡片上的“应用到 Agent”，选择 WorkBuddy，预览配置后点击“确认覆盖应用”。",
     cue: "选择 WorkBuddy → 预览 → 确认",
   },
 ] as const;

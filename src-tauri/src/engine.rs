@@ -3,7 +3,7 @@ use crate::{
     files::{self, Snapshot},
     import,
     mcp::{self, McpDraft, McpSummary, McpTarget},
-    model::{AgentKind, AppResult, ModelConfig},
+    model::{default_claude_1m, AgentKind, AppResult, ModelConfig},
     paths::{AgentPath, Paths, Settings},
 };
 use fs2::FileExt;
@@ -57,6 +57,7 @@ pub struct ApplyPreview {
 
 struct Pending {
     title: String,
+    agents: Vec<AgentKind>,
     changes: Vec<Change>,
     dependencies: Vec<Snapshot>,
     created_at: u64,
@@ -74,6 +75,8 @@ pub struct BackupRecord {
     pub created_at: u64,
     pub status: String,
     pub paths: Vec<PathBuf>,
+    #[serde(default)]
+    pub agents: Vec<AgentKind>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -327,7 +330,14 @@ impl Engine {
             pending.project_mcp_secrets = projection.project_secrets;
             pending.mcp_connector_id = Some(connector.id);
         }
-        Ok(preview)
+        Ok(self.tag_preview_agents(
+            preview,
+            targets.iter().map(|target| match target {
+                McpTarget::Workbuddy | McpTarget::WorkbuddyProject => AgentKind::Workbuddy,
+                McpTarget::ClaudeUser | McpTarget::ClaudeProject => AgentKind::Claude,
+                McpTarget::Codex | McpTarget::CodexProject => AgentKind::Codex,
+            }),
+        ))
     }
 
     /// Validate and persist explicit target-path and appearance preferences.
@@ -372,6 +382,17 @@ impl Engine {
         agents: &[AgentKind],
         select_workbuddy_model: bool,
     ) -> AppResult<ApplyPreview> {
+        self.preview_apply_with_options(id, agents, select_workbuddy_model, None)
+    }
+
+    /// Bind transient Claude 1M and WorkBuddy options to an immutable, guarded preview.
+    pub fn preview_apply_with_options(
+        &mut self,
+        id: &str,
+        agents: &[AgentKind],
+        select_workbuddy_model: bool,
+        claude_1m: Option<bool>,
+    ) -> AppResult<ApplyPreview> {
         if agents.is_empty() {
             return Err("请至少选择一个 Agent".into());
         }
@@ -393,7 +414,14 @@ impl Engine {
             if agents[..index].contains(agent) {
                 continue;
             }
-            let p = adapters::project(&self.paths, &store.settings, &model, *agent)?;
+            let mut target_model = model.clone();
+            if *agent == AgentKind::Claude
+                && claude_1m.unwrap_or_else(|| default_claude_1m(&model.model_id))
+                && !target_model.model_id.ends_with("[1m]")
+            {
+                target_model.model_id.push_str("[1m]");
+            }
+            let p = adapters::project(&self.paths, &store.settings, &target_model, *agent)?;
             changes.extend(p.changes);
             dependencies.extend(p.dependencies);
             // Opening WorkBuddy after the write has its own, more specific manual-selection notice.
@@ -410,14 +438,31 @@ impl Engine {
                     .into(),
             );
         }
-        self.prepare(
+        let preview = self.prepare(
             format!("应用模型 · {}", model.name),
             changes,
             dependencies,
             notices,
             select_workbuddy_model.then_some(model.model_id),
             "配置已写入，尚未验证模型调用。".into(),
-        )
+        )?;
+        Ok(self.tag_preview_agents(preview, agents.iter().copied()))
+    }
+
+    /// 记录本次操作的平台，去重后随备份保存，避免后续配置路径变化影响筛选。
+    fn tag_preview_agents(
+        &mut self,
+        preview: ApplyPreview,
+        agents: impl IntoIterator<Item = AgentKind>,
+    ) -> ApplyPreview {
+        if let Some(pending) = self.pending.get_mut(&preview.token) {
+            for agent in agents {
+                if !pending.agents.contains(&agent) {
+                    pending.agents.push(agent);
+                }
+            }
+        }
+        preview
     }
 
     /// Install a preview without writing Agent files; only the returned token can authorize commit.
@@ -465,6 +510,7 @@ impl Engine {
             token.clone(),
             Pending {
                 title: title.clone(),
+                agents: vec![],
                 changes,
                 dependencies,
                 created_at: now(),
@@ -526,6 +572,7 @@ impl Engine {
                 created_at: now(),
                 status: "pending".into(),
                 paths: p.changes.iter().map(|c| c.before.path.clone()).collect(),
+                agents: p.agents,
             },
             files: p
                 .changes
@@ -689,14 +736,15 @@ impl Engine {
                 after: file.before.bytes,
             });
         }
-        self.prepare(
+        let preview = self.prepare(
             format!("恢复备份 · {}", backup.record.title),
             changes,
             vec![],
             vec!["恢复将覆盖这些文件的当前内容；确认后会先备份当前状态。".into()],
             None,
             "配置已恢复，请在 Agent 中验证。".into(),
-        )
+        )?;
+        Ok(self.tag_preview_agents(preview, backup.record.agents))
     }
 
     /// Parse and stage an import; return descriptions rather than secret-bearing payloads.

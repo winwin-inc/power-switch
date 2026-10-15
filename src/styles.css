@@ -1182,7 +1182,7 @@ textarea::placeholder {
 .agent-option .tag {
   margin-left: auto;
 }
-.workbuddy-select-option {
+.agent-apply-option {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1191,15 +1191,15 @@ textarea::placeholder {
   border-left: 2px solid var(--blue);
   cursor: pointer;
 }
-.workbuddy-select-option:has(input:disabled) {
+.agent-apply-option:has(input:disabled) {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.workbuddy-select-option strong {
+.agent-apply-option strong {
   display: block;
   font-size: 12px;
 }
-.workbuddy-select-option small {
+.agent-apply-option small {
   display: block;
   color: var(--muted);
   font-size: 10px;
@@ -1207,7 +1207,10 @@ textarea::placeholder {
 }
 .backup-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 12px;
 }
 .info-note {
@@ -1281,7 +1284,35 @@ textarea::placeholder {
 }
 .diff-grid > div + div {
   border-left: 1px solid var(--border);
-  background: color-mix(in srgb, var(--green-soft) 35%, var(--surface));
+}
+.config-diff .diff-line {
+  display: flex;
+  min-height: 1.75em;
+}
+.diff-line-number {
+  flex: 0 0 4ch;
+  text-align: right;
+  padding-right: 1ch;
+  color: var(--muted);
+  user-select: none;
+}
+.diff-line-marker {
+  flex: 0 0 2ch;
+  text-align: center;
+  user-select: none;
+}
+.diff-line-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-line-removed {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 13%, var(--surface));
+}
+.diff-line-added {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 13%, var(--surface));
 }
 .diff-label {
   font-size: 10px;
@@ -1452,29 +1483,91 @@ textarea {
 .theme-options button svg:last-child:not(:first-child) {
   margin-left: auto;
 }
-.update-section-title {
+.about-page {
+  min-width: 0;
+}
+.about-card {
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.about-identity {
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 24px;
 }
-.update-section-title > svg {
-  align-self: flex-start;
+.about-identity > img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
 }
-.update-section-title > .button {
+.about-app-details {
+  flex: 1;
+  min-width: 0;
+  flex-basis: 160px;
+}
+.about-app-details h2 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+.about-app-details p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.about-check-update {
   margin-left: auto;
   white-space: nowrap;
 }
-.update-preference-row {
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.about-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--muted);
+  font-size: 12px;
+  border-radius: 4px;
+  text-decoration: none;
+}
+.about-links a:hover,
+.about-links a:focus-visible {
+  color: var(--blue);
+}
+.about-updates {
+  border-top: 1px solid var(--border);
+}
+.about-store-note {
+  padding: 16px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.about-updates .update-preference-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 17px 0;
-  border-top: 1px solid var(--border);
+  min-height: 56px;
+  padding: 14px 0;
 }
-.update-preference-row strong {
+.about-updates .update-preference-row strong {
   font-size: 12px;
 }
-.update-preference-row p,
-.update-error-text {
+.about-updates .update-preference-row p,
+.about-updates .update-error-text {
   margin-top: 5px;
   font-size: 10px;
   line-height: 1.7;
@@ -1508,8 +1601,15 @@ textarea {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.update-available-button {
-  margin-top: 10px;
+.about-updates .update-available-button {
+  margin: 4px 0 12px;
+  white-space: normal;
+  text-align: left;
+}
+.about-updates .update-error-text {
+  margin: 4px 0 12px;
+  color: var(--red);
+  overflow-wrap: anywhere;
 }
 .path-field {
   margin-bottom: 23px;
@@ -1834,11 +1934,12 @@ textarea {
   .settings-section {
     padding: 19px;
   }
-  .update-section-title {
-    flex-wrap: wrap;
+  .about-card {
+    padding: 20px;
   }
-  .update-section-title > .button {
-    margin-left: 31px;
+  .about-identity {
+    gap: 12px;
+    padding-bottom: 20px;
   }
   .backup-row {
     padding: 16px;

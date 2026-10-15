@@ -200,16 +200,17 @@ fn save_settings(state: Shared<'_>, settings: Settings) -> AppResult<()> {
 fn save_new_api_url(state: Shared<'_>, url: String) -> AppResult<()> {
     with_engine(state, |e| e.new_api_url(url))
 }
-/// Prepare a model application for user review.
+/// Prepare a model application with optional Claude 1M mode for user review.
 #[tauri::command]
 fn preview_apply(
     state: Shared<'_>,
     id: String,
     agents: Vec<AgentKind>,
     select_workbuddy_model: bool,
+    claude1m: Option<bool>,
 ) -> AppResult<ApplyPreview> {
     with_engine(state, |e| {
-        e.preview_apply_with_selection(&id, &agents, select_workbuddy_model)
+        e.preview_apply_with_options(&id, &agents, select_workbuddy_model, claude1m)
     })
 }
 /// Commit the confirmed preview, then allow WorkBuddy to reload its model list before opening home.

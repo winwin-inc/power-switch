@@ -4,6 +4,7 @@ use power_switch::{
     engine::Engine,
     files,
     import::{parse_link, share_link},
+    mcp::{AuthMode, McpDraft, McpTarget},
     model::{AgentKind, ModelConfig, Protocol},
     paths::{Paths, Settings},
 };
@@ -178,6 +179,184 @@ fn claude_merges_without_touching_permissions_or_hooks() {
     assert_eq!(result["model"], "example-model");
 }
 
+/// Every Claude model alias must use the same ID, including an existing top-level override.
+fn assert_claude_model_ids(config: &Value, expected: &str) {
+    for key in [
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_FABLE_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "CLAUDE_CODE_SUBAGENT_MODEL",
+    ] {
+        assert_eq!(config["env"][key], expected, "{key}");
+    }
+    if let Some(value) = config.get("model") {
+        assert_eq!(value, expected);
+    }
+}
+
+/// Legacy preview callers use the exclusion rule, including unknown future models.
+#[test]
+fn claude_1m_defaults_cover_known_and_future_models() {
+    for (id, expected) in [
+        ("auto", "auto[1m]"),
+        ("auto-v", "auto-v[1m]"),
+        ("fast", "fast[1m]"),
+        ("glm-5.2", "glm-5.2[1m]"),
+        ("glm-5.3", "glm-5.3[1m]"),
+        ("glm-5.3-flash", "glm-5.3-flash[1m]"),
+        ("MiniMax-M3", "MiniMax-M3[1m]"),
+        (
+            "MiniMax-M3.1-Flash-Preview",
+            "MiniMax-M3.1-Flash-Preview[1m]",
+        ),
+        ("MiniMax-M2.7-highspeed", "MiniMax-M2.7-highspeed"),
+        ("k3", "k3"),
+        ("future-model", "future-model[1m]"),
+        ("k3-preview", "k3-preview[1m]"),
+        ("K3", "K3[1m]"),
+    ] {
+        let (_temp, mut engine) = isolated();
+        let mut draft = model(Protocol::AnthropicMessages);
+        draft.model_id = id.into();
+        let saved = engine.upsert(draft).unwrap();
+        let preview = engine
+            .preview_apply(&saved.id, &[AgentKind::Claude])
+            .unwrap();
+        let output: Value = serde_json::from_str(&preview.files[0].after).unwrap();
+        assert_claude_model_ids(&output, expected);
+        assert!(output.get("model").is_none());
+        assert!(!preview.files[0].path.exists());
+    }
+}
+
+/// Explicit choices override defaults without persisting a flag or changing original model IDs.
+#[test]
+fn claude_1m_overrides_are_transient_and_suffix_is_idempotent() {
+    for (id, enabled, expected) in [
+        ("k3", true, "k3[1m]"),
+        ("MiniMax-M2.7-highspeed", true, "MiniMax-M2.7-highspeed[1m]"),
+        ("auto", false, "auto"),
+        ("auto[1m]", true, "auto[1m]"),
+        ("auto[1m]", false, "auto[1m]"),
+    ] {
+        let (_temp, mut engine) = isolated();
+        let mut draft = model(Protocol::AnthropicMessages);
+        draft.model_id = id.into();
+        let saved = engine.upsert(draft).unwrap();
+        let library_path = engine.paths.data.join("models.json");
+        let library_before = fs::read(&library_path).unwrap();
+        let preview = engine
+            .preview_apply_with_options(&saved.id, &[AgentKind::Claude], false, Some(enabled))
+            .unwrap();
+        let output: Value = serde_json::from_str(&preview.files[0].after).unwrap();
+        assert_claude_model_ids(&output, expected);
+        engine.apply(&preview.token).unwrap();
+        assert_eq!(fs::read(&library_path).unwrap(), library_before);
+        let stored = engine.data().unwrap().models.remove(0);
+        assert_eq!(stored.model_id, id);
+        assert_eq!(stored.context_window, saved.context_window);
+        let imported = parse_link(&share_link(&stored, true).unwrap()).unwrap();
+        assert_eq!(imported[0].model_id, id);
+        let default_preview = engine
+            .preview_apply_with_selection(&saved.id, &[AgentKind::Claude], false)
+            .unwrap();
+        let default_output: Value = serde_json::from_str(&default_preview.files[0].after).unwrap();
+        let default_expected =
+            if ["k3", "MiniMax-M2.7-highspeed"].contains(&id) || id.ends_with("[1m]") {
+                id.to_string()
+            } else {
+                format!("{id}[1m]")
+            };
+        assert_claude_model_ids(&default_output, &default_expected);
+    }
+}
+
+/// Confirmation writes exactly the projected aliases and restoration returns original bytes.
+#[test]
+fn claude_1m_preview_apply_cancel_and_restore_preserve_existing_settings() {
+    let (_temp, mut engine) = isolated();
+    let saved = engine.upsert(model(Protocol::AnthropicMessages)).unwrap();
+    let path = engine.paths.home.join(".claude/settings.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let original = json!({
+        "model": "previous-model",
+        "permissions": {"allow": ["Read"]},
+        "hooks": {"custom": true},
+        "env": {"HTTP_PROXY": "http://localhost:1", "ANTHROPIC_AUTH_TOKEN": "old-secret"}
+    })
+    .to_string();
+    fs::write(&path, &original).unwrap();
+    let canceled = engine
+        .preview_apply(&saved.id, &[AgentKind::Claude])
+        .unwrap();
+    engine.cancel_preview(&canceled.token);
+    assert!(engine.apply(&canceled.token).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+
+    let preview = engine
+        .preview_apply(&saved.id, &[AgentKind::Claude])
+        .unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    let projected: Value = serde_json::from_str(&preview.files[0].after).unwrap();
+    assert_claude_model_ids(&projected, "example-model[1m]");
+    assert!(!preview.files[0].after.contains("sk-TEST-ONLY"));
+    let applied = engine.apply(&preview.token).unwrap();
+    let written = fs::read(&path).unwrap();
+    assert_eq!(files::redacted(Some(&written)), preview.files[0].after);
+    let output: Value = serde_json::from_slice(&written).unwrap();
+    assert_claude_model_ids(&output, "example-model[1m]");
+    assert_eq!(output["env"]["ANTHROPIC_AUTH_TOKEN"], saved.api_key);
+    for key in ["permissions", "hooks"] {
+        assert_eq!(output[key], projected[key]);
+    }
+    assert_eq!(output["env"]["HTTP_PROXY"], "http://localhost:1");
+    let restore = engine.preview_restore(&applied.backup_id).unwrap();
+    engine.apply(&restore.token).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+}
+
+/// A newly created Claude configuration can be restored to its original absent state.
+#[test]
+fn claude_1m_restore_removes_a_new_configuration() {
+    let (_temp, mut engine) = isolated();
+    let saved = engine.upsert(model(Protocol::AnthropicMessages)).unwrap();
+    let preview = engine
+        .preview_apply(&saved.id, &[AgentKind::Claude])
+        .unwrap();
+    let applied = engine.apply(&preview.token).unwrap();
+    assert!(preview.files[0].path.exists());
+    let restore = engine.preview_restore(&applied.backup_id).unwrap();
+    engine.apply(&restore.token).unwrap();
+    assert!(!preview.files[0].path.exists());
+}
+
+/// Passing the Claude option cannot rewrite WorkBuddy or Codex model IDs.
+#[test]
+fn claude_1m_option_is_ignored_for_other_agents() {
+    for (protocol, agent) in [
+        (Protocol::OpenaiChat, AgentKind::Workbuddy),
+        (Protocol::OpenaiResponses, AgentKind::Codex),
+    ] {
+        let (_temp, mut engine) = isolated();
+        let saved = engine.upsert(model(protocol)).unwrap();
+        let preview = engine
+            .preview_apply_with_options(&saved.id, &[agent], false, Some(true))
+            .unwrap();
+        assert!(preview
+            .files
+            .iter()
+            .all(|file| !file.after.contains("[1m]")));
+        engine.apply(&preview.token).unwrap();
+        for file in &preview.files {
+            let written = fs::read_to_string(&file.path).unwrap();
+            assert!(!written.contains("[1m]"));
+        }
+        assert_eq!(engine.data().unwrap().models[0].model_id, saved.model_id);
+    }
+}
+
 /// A saved model alone never creates or writes the target file, and cancellation is final.
 #[test]
 fn save_and_cancel_have_no_agent_side_effects() {
@@ -244,6 +423,88 @@ fn apply_and_restore_missing_file() {
     let redo = engine.preview_restore(&restored.backup_id).unwrap();
     engine.apply(&redo.token).unwrap();
     assert!(result.paths[0].exists());
+}
+
+/// 平台信息在自定义路径、修改设置及恢复后仍保留，重复选择只记录一次。
+#[test]
+fn backup_platforms_survive_custom_paths_and_restore() {
+    let (temp, mut engine) = isolated();
+    let mut settings = engine.current_settings().unwrap();
+    settings.workbuddy_path = Some(temp.path().join("custom/first.json"));
+    engine.settings(settings.clone()).unwrap();
+    let model = engine.upsert(model(Protocol::OpenaiChat)).unwrap();
+    let preview = engine
+        .preview_apply(&model.id, &[AgentKind::Workbuddy, AgentKind::Workbuddy])
+        .unwrap();
+    let applied = engine.apply(&preview.token).unwrap();
+    settings.workbuddy_path = Some(temp.path().join("custom/second.json"));
+    engine.settings(settings).unwrap();
+    assert_eq!(
+        engine.list_backups().unwrap()[0].agents,
+        vec![AgentKind::Workbuddy]
+    );
+    let restore = engine.preview_restore(&applied.backup_id).unwrap();
+    engine.apply(&restore.token).unwrap();
+    assert!(engine
+        .list_backups()
+        .unwrap()
+        .iter()
+        .all(|record| record.agents == vec![AgentKind::Workbuddy]));
+}
+
+/// 一次向多个平台应用 MCP 时，每个平台都应保存在同一条备份记录中。
+#[test]
+fn backup_records_all_applied_platforms() {
+    let (_temp, mut engine) = isolated();
+    let connector = engine
+        .mcp_upsert(McpDraft {
+            id: String::new(),
+            name: "测试连接器".into(),
+            server_id: "test-platforms".into(),
+            url: "https://example.com/mcp".into(),
+            auth_mode: AuthMode::None,
+            header_name: String::new(),
+            token: String::new(),
+        })
+        .unwrap();
+    let preview = engine
+        .preview_mcp_apply(
+            &connector.id,
+            &[
+                McpTarget::Workbuddy,
+                McpTarget::ClaudeUser,
+                McpTarget::Codex,
+            ],
+            None,
+        )
+        .unwrap();
+    engine.apply(&preview.token).unwrap();
+    assert_eq!(
+        engine.list_backups().unwrap()[0].agents,
+        vec![AgentKind::Workbuddy, AgentKind::Claude, AgentKind::Codex]
+    );
+}
+
+/// 没有平台字段的历史备份仍可读取和恢复。
+#[test]
+fn legacy_backups_without_platforms_remain_restorable() {
+    let (temp, mut engine) = isolated();
+    let model = engine.upsert(model(Protocol::OpenaiChat)).unwrap();
+    let preview = engine
+        .preview_apply(&model.id, &[AgentKind::Workbuddy])
+        .unwrap();
+    let applied = engine.apply(&preview.token).unwrap();
+    let path = temp
+        .path()
+        .join("app/backups")
+        .join(format!("{}.json", applied.backup_id));
+    let mut backup: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    backup["record"].as_object_mut().unwrap().remove("agents");
+    fs::write(path, serde_json::to_vec(&backup).unwrap()).unwrap();
+    assert!(engine.list_backups().unwrap()[0].agents.is_empty());
+    let restore = engine.preview_restore(&applied.backup_id).unwrap();
+    engine.apply(&restore.token).unwrap();
+    assert!(!applied.paths[0].exists());
 }
 
 /// Deleting a backup cannot change the current Agent file or leave a usable stale restore token.
