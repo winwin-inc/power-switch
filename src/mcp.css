@@ -34,29 +34,35 @@
 }
 .mcp-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
-  gap: 15px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
 }
 .mcp-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 18px;
   min-width: 0;
-  padding: 20px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
   box-shadow: var(--shadow);
 }
 .mcp-card-main {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
-  align-items: flex-start;
-  gap: 13px;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
 }
 .mcp-card-icon {
   display: grid;
   place-items: center;
   flex: none;
-  width: 43px;
-  height: 43px;
+  width: 40px;
+  height: 40px;
   border-radius: 11px;
   color: var(--blue);
   background: var(--blue-soft);
@@ -65,13 +71,30 @@
   flex: 1;
   min-width: 0;
 }
+.mcp-card-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  min-width: 0;
+}
 .mcp-card h3 {
-  margin: 1px 0 5px;
-  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  font-size: 14px;
+}
+.mcp-connector-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mcp-built-in {
+  flex: none;
   display: inline-block;
-  margin-left: 8px;
   padding: 2px 6px;
   border-radius: 5px;
   color: var(--blue);
@@ -84,6 +107,11 @@
   background: var(--surface);
 }
 .mcp-server-id {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font:
     11px ui-monospace,
     SFMono-Regular,
@@ -92,7 +120,7 @@
   color: var(--blue);
 }
 .mcp-card-copy p {
-  margin: 10px 0 0;
+  margin: 5px 0 0;
   color: var(--muted);
   font-size: 11px;
   overflow: hidden;
@@ -103,15 +131,15 @@
   flex: none;
   color: var(--muted);
   font-size: 10px;
+  white-space: nowrap;
 }
 .mcp-card-actions {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 7px;
-  padding-top: 18px;
-  margin-top: 18px;
-  border-top: 1px solid var(--border);
 }
 .mcp-card-actions .button {
   min-height: 32px;
@@ -119,8 +147,29 @@
   font-size: 10px;
 }
 .mcp-delete {
-  margin-left: auto;
   color: var(--red);
+}
+.mcp-card > .mcp-test-result {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  margin: 12px 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 980px) {
+  .mcp-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mcp-card-actions {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: 12px;
+    padding-left: 52px;
+  }
+  .mcp-card > .mcp-test-result {
+    grid-row: 3;
+  }
 }
 .mcp-test-result,
 .mcp-banner {

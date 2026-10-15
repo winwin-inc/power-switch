@@ -84,6 +84,7 @@ type DialogState =
   | { kind: "delete"; connector: McpSummary }
   | null;
 type Feedback = { status: "passed" | "failed"; message: string };
+type ActiveTest = { kind: "connector"; id: string } | { kind: "draft" } | null;
 
 /** Create an empty custom remote MCP draft. */
 export function emptyMcpDraft(): McpDraft {
@@ -122,7 +123,8 @@ export function McpPage() {
   const [activePlatform, setActivePlatform] = useState(0);
   const [projectDir, setProjectDir] = useState("");
   const [busy, setBusy] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [activeTest, setActiveTest] = useState<ActiveTest>(null);
+  const testing = activeTest !== null;
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const savedToken = connectors.some(
@@ -186,10 +188,10 @@ export function McpPage() {
     setError("");
   }
 
-  /** Run MCP initialize plus tools/list for a draft or an existing connector. */
+  /** Run a single MCP check while binding its loading indicator to its originating control. */
   async function runTest(candidate: McpDraft, id?: string) {
     if (busy || testing) return;
-    setTesting(true);
+    setActiveTest(id ? { kind: "connector", id } : { kind: "draft" });
     setError("");
     try {
       const result = await mcpApi.test(candidate);
@@ -204,7 +206,7 @@ export function McpPage() {
       if (id) setSavedTests((old) => ({ ...old, [id]: next }));
       else setFeedback(next);
     } finally {
-      setTesting(false);
+      setActiveTest(null);
     }
   }
 
@@ -354,13 +356,22 @@ export function McpPage() {
                   <Cable size={22} />
                 </div>
                 <div className="mcp-card-copy">
-                  <h3>
-                    {connector.name}
-                    {connector.builtIn && (
-                      <span className="mcp-built-in">内置</span>
-                    )}
-                  </h3>
-                  <span className="mcp-server-id">{connector.serverId}</span>
+                  <div className="mcp-card-heading">
+                    <h3>
+                      <span
+                        className="mcp-connector-name"
+                        title={connector.name}
+                      >
+                        {connector.name}
+                      </span>
+                      {connector.builtIn && (
+                        <span className="mcp-built-in">内置</span>
+                      )}
+                    </h3>
+                    <span className="mcp-server-id" title={connector.serverId}>
+                      {connector.serverId}
+                    </span>
+                  </div>
                   <p title={connector.url}>{connector.url}</p>
                 </div>
                 <span className="mcp-secret-state">
@@ -382,6 +393,10 @@ export function McpPage() {
               <div className="mcp-card-actions">
                 <button
                   className="button secondary"
+                  aria-busy={
+                    activeTest?.kind === "connector" &&
+                    activeTest.id === connector.id
+                  }
                   disabled={
                     testing ||
                     busy ||
@@ -391,7 +406,8 @@ export function McpPage() {
                     void runTest(editDraft(connector), connector.id)
                   }
                 >
-                  {testing ? (
+                  {activeTest?.kind === "connector" &&
+                  activeTest.id === connector.id ? (
                     <LoaderCircle size={15} className="spin" />
                   ) : (
                     <FlaskConical size={15} />
@@ -587,10 +603,11 @@ export function McpPage() {
               <button
                 type="button"
                 className="button secondary"
+                aria-busy={activeTest?.kind === "draft"}
                 disabled={busy || testing}
                 onClick={() => void runTest(draft)}
               >
-                {testing ? (
+                {activeTest?.kind === "draft" ? (
                   <LoaderCircle size={15} className="spin" />
                 ) : (
                   <FlaskConical size={15} />
