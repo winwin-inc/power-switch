@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpPage } from "../McpPage";
@@ -46,6 +46,94 @@ beforeEach(() => {
 });
 
 describe("MCP connector page", () => {
+  /** Keep the loading indicator and result on the clicked connector, including failures. */
+  it.each(["success", "failure"] as const)(
+    "shows only the selected connector as testing and resets after %s",
+    async (outcome) => {
+      const user = userEvent.setup();
+      const internal: McpSummary = {
+        ...connector,
+        id: "internal-1",
+        name: "马上赢内部 LightDash",
+        serverId: "msy-internal-lightdash",
+        url: "https://mcp-lightdash.banmahui.cn/mcp",
+      };
+      vi.mocked(mcpApi.list).mockResolvedValue([connector, internal]);
+      let finish!: () => void;
+      vi.mocked(mcpApi.test).mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () =>
+              outcome === "success"
+                ? resolve({ toolCount: 26 })
+                : reject("401 Unauthorized");
+          }),
+      );
+      render(<McpPage />);
+      const first = (
+        await screen.findByRole("heading", { name: /^马上赢 X 平台/ })
+      ).closest("article")!;
+      const second = screen
+        .getByRole("heading", { name: /^马上赢内部 LightDash/ })
+        .closest("article")!;
+      const firstButton = within(first).getByRole("button", {
+        name: "测试连接",
+      });
+      const secondButton = within(second).getByRole("button", {
+        name: "测试连接",
+      });
+      await user.click(firstButton);
+      expect(first.querySelectorAll(".spin")).toHaveLength(1);
+      expect(second.querySelectorAll(".spin")).toHaveLength(0);
+      expect(firstButton).toHaveAttribute("aria-busy", "true");
+      expect(secondButton).toHaveAttribute("aria-busy", "false");
+      await user.click(secondButton);
+      expect(mcpApi.test).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: connector.id }),
+      );
+      await act(async () => finish());
+      expect(firstButton).toHaveAttribute("aria-busy", "false");
+      expect(firstButton).toBeEnabled();
+      expect(secondButton).toBeEnabled();
+      expect(first.querySelector(".spin")).not.toBeInTheDocument();
+      expect(within(first).getByRole("status")).toHaveTextContent(
+        outcome === "success" ? "发现 26 个工具" : "401 Unauthorized",
+      );
+      expect(within(second).queryByRole("status")).not.toBeInTheDocument();
+    },
+  );
+
+  /** Draft tests must not show a loading indicator on any saved connector row. */
+  it("shows draft testing only inside the edit dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(mcpApi.list).mockResolvedValue([connector]);
+    let finish!: () => void;
+    vi.mocked(mcpApi.test).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ toolCount: 2 });
+        }),
+    );
+    render(<McpPage />);
+    const row = (
+      await screen.findByRole("heading", { name: /^马上赢 X 平台/ })
+    ).closest("article")!;
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    const dialog = screen.getByRole("dialog");
+    const button = within(dialog).getByRole("button", { name: "测试连接" });
+    await user.click(button);
+    expect(dialog.querySelectorAll(".spin")).toHaveLength(1);
+    expect(row.querySelectorAll(".spin")).toHaveLength(0);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    await act(async () => finish());
+    expect(button).toHaveAttribute("aria-busy", "false");
+    expect(button).toBeEnabled();
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "发现 2 个工具",
+    );
+    expect(within(row).queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("configures the internal built-in using only its own fixed endpoint and token link", async () => {
     const user = userEvent.setup();
     const internal: McpSummary = {
@@ -116,7 +204,10 @@ describe("MCP connector page", () => {
   it("shows a built-in X connector with a fixed endpoint and a token-only setup form", async () => {
     const user = userEvent.setup();
     render(<McpPage />);
-    await screen.findByText("马上赢 X 平台", { selector: "h3" });
+    await screen.findByRole("heading", {
+      name: /^马上赢 X 平台/,
+      level: 3,
+    });
     expect(
       screen.queryByRole("button", { name: "添加马上赢 X" }),
     ).not.toBeInTheDocument();
