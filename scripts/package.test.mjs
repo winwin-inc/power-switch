@@ -23,7 +23,7 @@ import {
   verifyPackage,
   writePackageIdentityEnvironment,
 } from "./package.mjs";
-import { targets } from "./release.mjs";
+import { releaseMatrix, targets } from "./release.mjs";
 
 /** 为产物测试创建独立 Git 仓库和匹配当前版本的最小 Tauri 目录。 */
 async function fixture(t) {
@@ -241,14 +241,18 @@ test("test packaging targets stay aligned with the existing release matrix", asy
     new URL("../.github/workflows/release.yml", import.meta.url),
     "utf8",
   );
-  for (const [name, target] of Object.entries(targets)) {
-    const entry = [
-      `- platform: ${name}`,
-      `os: ${target.runner}`,
-      `target: ${target.triple}`,
-      `rust-targets: ${target.rustTargets}`,
-      `bundles: ${target.bundles}`,
-    ].join("\\s+");
-    assert.match(workflow, new RegExp(entry));
+  assert.match(workflow, /scripts\/release\.mjs matrix/);
+  assert.match(workflow, /fromJSON\(needs\.validate\.outputs\.matrix\)/);
+  const release = releaseMatrix().include;
+  assert.deepEqual(
+    release.map((entry) => entry.platform),
+    packageMatrix().include.map((entry) => entry.platform),
+  );
+  for (const entry of release) {
+    const target = targets[entry.platform];
+    assert.equal(entry.os, target.runner);
+    assert.equal(entry.target, target.triple);
+    assert.equal(entry.rustTargets, target.rustTargets);
+    assert.equal(entry.bundles, target.bundles);
   }
 });

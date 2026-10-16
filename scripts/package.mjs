@@ -13,7 +13,12 @@ import { createHash } from "node:crypto";
 import { arch, platform as operatingSystem } from "node:process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkVersion, targets, versionFromTag } from "./release.mjs";
+import {
+  checkVersion,
+  targets,
+  versionFromTag,
+  verifyMacArchitectures,
+} from "./release.mjs";
 
 const repository = "winwin-inc/power-switch";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -209,22 +214,15 @@ export async function collectPackage(name, projectRoot = root) {
     "bundle",
   );
   if (name === "macos-universal") {
-    execFileSync(
-      "lipo",
-      [
-        join(
-          base,
-          "macos",
-          "power-switch.app",
-          "Contents",
-          "MacOS",
-          "power-switch",
-        ),
-        "-verify_arch",
-        "x86_64",
-        "arm64",
-      ],
-      { stdio: "inherit" },
+    verifyMacArchitectures(
+      join(
+        base,
+        "macos",
+        "power-switch.app",
+        "Contents",
+        "MacOS",
+        "power-switch",
+      ),
     );
   }
   const sources = [];

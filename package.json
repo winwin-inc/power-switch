@@ -22,7 +22,8 @@
     "test:store": "node --test scripts/store-msix.test.mjs",
     "release:check": "node scripts/release.mjs check",
     "format": "prettier --write src scripts docs *.json *.ts *.html *.md .github",
-    "format:check": "prettier --check src scripts docs *.json *.ts *.html *.md .github"
+    "format:check": "prettier --check src scripts docs *.json *.ts *.html *.md .github",
+    "test:release-manager": "node --test scripts/release-manager.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

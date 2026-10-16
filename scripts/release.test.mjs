@@ -139,7 +139,12 @@ test("selects the updater-supported bundle and its matching signature per platfo
 
 test("generates a signed updater manifest for all supported OS architectures", async (t) => {
   const directory = await assetFixture(t);
-  await writeUpdaterManifest(directory, "winwin-inc/power-switch", "v0.1.0");
+  await writeUpdaterManifest(
+    directory,
+    "winwin-inc/power-switch",
+    "v0.1.0",
+    "2026-10-16T00:00:00Z",
+  );
   const manifest = JSON.parse(
     await readFile(join(directory, "latest.json"), "utf8"),
   );

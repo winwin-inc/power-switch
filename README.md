@@ -2,6 +2,8 @@
 
 power-switch 是一个本地桌面应用，用来统一管理 AI 模型，并把模型配置应用到 WorkBuddy、Claude Code 和 Codex。
 
+开发者可通过 `just check` 运行检查与测试，通过 `just package-local` 打包本机安装包。版本准备、PR、CI、五平台打包、GitHub Release 和失败恢复的完整步骤见[发布与打包手册](docs/releasing.md)，统一入口可用 `just --list` 查看。
+
 ## 下载与安装
 
 请从 [GitHub Releases](https://github.com/winwin-inc/power-switch/releases) 下载对应系统的安装包：

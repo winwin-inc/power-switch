@@ -64,6 +64,33 @@ export const targets = {
   },
 };
 
+/** 从唯一平台定义生成正式发布的原生构建矩阵。 */
+export function releaseMatrix() {
+  return {
+    include: Object.entries(targets).map(([platform, target]) => ({
+      platform,
+      os: target.runner,
+      target: target.triple,
+      rustTargets: target.rustTargets,
+      bundles: target.bundles,
+    })),
+  };
+}
+
+/** 读取实际二进制架构，兼容 Apple 与其他发行版的 lipo 参数解析。 */
+export function verifyMacArchitectures(binary, run = execFileSync) {
+  const architectures = run("lipo", ["-archs", binary], {
+    encoding: "utf8",
+  })
+    .trim()
+    .split(/\s+/)
+    .sort();
+  if (JSON.stringify(architectures) !== JSON.stringify(["arm64", "x86_64"]))
+    throw new Error(
+      `Expected macOS arm64 and x86_64; found ${architectures.join(", ")}`,
+    );
+}
+
 /** List local signature sidecars required to create the signed updater manifest. */
 export function expectedSignatures(tag) {
   versionFromTag(tag);
@@ -248,16 +275,7 @@ export async function collectAssets(root, directory, tag, platform) {
       await copyFile(await bundleFile(join(base, "bundle"), extension), output);
     } else if (platform === "macos-universal") {
       const app = join(base, "bundle/macos/power-switch.app");
-      execFileSync(
-        "lipo",
-        [
-          join(app, "Contents/MacOS/power-switch"),
-          "-verify_arch",
-          "x86_64",
-          "arm64",
-        ],
-        { stdio: "inherit" },
-      );
+      verifyMacArchitectures(join(app, "Contents/MacOS/power-switch"));
       execFileSync(
         "ditto",
         ["-c", "-k", "--sequesterRsrc", "--keepParent", app, output],
@@ -297,7 +315,7 @@ export async function collectAssets(root, directory, tag, platform) {
   );
 }
 
-/** 提供版本校验、平台产物收集和统一校验和生成三个 CLI 子命令。 */
+/** 提供共享矩阵、版本校验、平台产物收集和统一校验和生成命令。 */
 async function main() {
   const [command, tag, platform] = process.argv
     .slice(2)
@@ -306,13 +324,17 @@ async function main() {
     process.env.RELEASE_ROOT ?? fileURLToPath(new URL("..", import.meta.url)),
   );
   const directory = join(root, "release-assets");
+  if (command === "matrix") {
+    console.log(`matrix=${JSON.stringify(releaseMatrix())}`);
+    return;
+  }
   if (command === "check") await checkVersion(root, tag);
   else if (command === "collect" && platform)
     await collectAssets(root, directory, tag, platform);
   else if (command === "checksums") await writeChecksums(directory, tag);
   else
     throw new Error(
-      "Usage: release.mjs check|collect|checksums v<version> [platform]",
+      "Usage: release.mjs matrix | check|collect|checksums v<version> [platform]",
     );
   console.log(`Release ${command} passed: ${tag}`);
 }

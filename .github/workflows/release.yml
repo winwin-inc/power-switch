@@ -27,6 +27,8 @@ jobs:
     name: Validate release tag
     runs-on: ubuntu-22.04
     timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +41,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - id: platforms
+        shell: bash
+        run: node scripts/release.mjs matrix >> "$GITHUB_OUTPUT"
       - name: Check version and master ancestry
         shell: bash
         env:
@@ -58,36 +63,10 @@ jobs:
 
   build:
     name: Bundle (${{ matrix.platform }})
-    needs: checks
+    needs: [validate, checks]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: macos-universal
-            os: macos-14
-            target: universal-apple-darwin
-            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-            bundles: app,dmg
-          - platform: windows-x64
-            os: windows-2022
-            target: x86_64-pc-windows-msvc
-            rust-targets: x86_64-pc-windows-msvc
-            bundles: msi
-          - platform: windows-arm64
-            os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            rust-targets: aarch64-pc-windows-msvc
-            bundles: msi
-          - platform: linux-x64
-            os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            rust-targets: x86_64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
-          - platform: linux-arm64
-            os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-            rust-targets: aarch64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -98,7 +77,7 @@ jobs:
           path: release-source
       - uses: ./.github/actions/setup
         with:
-          targets: ${{ matrix.rust-targets }}
+          targets: ${{ matrix.rustTargets }}
       - run: pnpm install --frozen-lockfile
         working-directory: release-source
       - name: Build desktop bundles

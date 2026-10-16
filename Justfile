@@ -15,6 +15,7 @@ web:
 check:
     pnpm typecheck
     pnpm format:check
+    pnpm build:web
     cargo fmt --manifest-path src-tauri/Cargo.toml --check
     cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     just test
@@ -23,6 +24,7 @@ check:
 test:
     pnpm test
     pnpm test:release
+    pnpm test:release-manager
     pnpm test:package
     pnpm test:store
     cargo test --locked --manifest-path src-tauri/Cargo.toml
@@ -67,3 +69,35 @@ release-check tag:
 # 使用已安装的 Codex 解析隔离配置，CODEX_BIN 可覆盖可执行文件路径。
 codex-check:
     node scripts/verify-codex.mjs
+
+# 只读检查发布环境与 GitHub 权限。
+release-doctor:
+    node scripts/release-manager.mjs doctor
+
+# 准备发布分支、版本和待填写说明；option 可传 --dry-run。
+release-prepare tag option="":
+    node scripts/release-manager.mjs prepare {{quote(tag)}} {{quote(option)}}
+
+# 白名单提交发布文件并创建或复用 PR。
+release-pr tag option="":
+    node scripts/release-manager.mjs pr {{quote(tag)}} {{quote(option)}}
+
+# 等待 PR CI 并核对提交后合并。
+release-merge tag option="":
+    node scripts/release-manager.mjs merge {{quote(tag)}} {{quote(option)}}
+
+# 核对 master CI 后推送标签并等待 Release。
+release-publish tag option="":
+    node scripts/release-manager.mjs publish {{quote(tag)}} {{quote(option)}}
+
+# 只读显示 PR、CI、五平台构建及 Release 状态。
+release-status tag:
+    node scripts/release-manager.mjs status {{quote(tag)}}
+
+# 验证公开资产与更新清单；option 可传 --download。
+release-verify tag option="":
+    node scripts/release-manager.mjs verify {{quote(tag)}} {{quote(option)}}
+
+# 重新验证资产后显式提升稳定版为 Latest。
+release-promote tag option="":
+    node scripts/release-manager.mjs promote {{quote(tag)}} {{quote(option)}}

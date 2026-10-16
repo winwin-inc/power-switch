@@ -60,8 +60,15 @@ async function verifyUploads(repository, releaseId, directory, names) {
   }
 }
 
-/** Build Tauri's signed updater manifest from release bundles and private signature sidecars. */
-export async function writeUpdaterManifest(directory, repository, tag) {
+/** 使用标签提交的固定时间生成更新清单，保证同提交重跑的字节一致。 */
+export async function writeUpdaterManifest(
+  directory,
+  repository,
+  tag,
+  publishedAt,
+) {
+  if (!publishedAt || !Number.isFinite(Date.parse(publishedAt)))
+    throw new Error("A valid release commit timestamp is required");
   const signature = async (platform) =>
     (
       await readFile(
@@ -98,7 +105,7 @@ export async function writeUpdaterManifest(directory, repository, tag) {
   const manifest = {
     version: tag,
     notes: `power-switch ${tag} update`,
-    pub_date: new Date().toISOString(),
+    pub_date: new Date(publishedAt).toISOString(),
     platforms,
   };
   await writeFile(
@@ -144,7 +151,15 @@ async function main() {
   });
   assertPublishable(release, commit, repairStable);
   const repairingStable = release && !release.draft && !release.prerelease;
-  await writeUpdaterManifest(directory, repository, tag);
+  const publishedAt = execFileSync(
+    "git",
+    ["show", "-s", "--format=%cI", commit],
+    {
+      cwd: root,
+      encoding: "utf8",
+    },
+  ).trim();
+  await writeUpdaterManifest(directory, repository, tag, publishedAt);
   names.push("latest.json");
   if (release && !release.draft && !repairingStable) {
     await verifyUploads(repository, release.id, directory, names);
@@ -160,7 +175,13 @@ async function main() {
         tag_name: tag,
         target_commitish: commit,
         name: `power-switch ${tag}`,
-        body: await readFile(join(root, ".github/RELEASE_TEMPLATE.md"), "utf8"),
+        body: await readFile(
+          join(root, "docs/releases", `${tag}.md`),
+          "utf8",
+        ).catch((error) => {
+          if (error.code !== "ENOENT") throw error;
+          return readFile(join(root, ".github/RELEASE_TEMPLATE.md"), "utf8");
+        }),
         draft: true,
         prerelease: true,
         make_latest: "false",
