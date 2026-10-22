@@ -166,7 +166,31 @@ pub fn claude(text: Option<&str>, model: &ModelConfig) -> AppResult<Vec<u8>> {
     encode(&root)
 }
 
-/// Generate a schema-compatible Codex model record from explicitly supplied capabilities.
+/// 优先选择受支持的高档，否则沿用首个档位；空列表不设置默认值。
+fn default_reasoning_level(model: &ModelConfig) -> Option<&str> {
+    model
+        .reasoning_levels
+        .iter()
+        .find(|level| level.as_str() == "high")
+        .or_else(|| model.reasoning_levels.first())
+        .map(String::as_str)
+}
+
+/// 将档位说明中文化，同时保留 Codex 协议所需的英文标识。
+fn reasoning_description(level: &str) -> &str {
+    match level {
+        "none" => "无",
+        "minimal" => "极低",
+        "low" => "低",
+        "medium" => "中",
+        "high" => "高",
+        "xhigh" => "超高",
+        "max" => "极致",
+        _ => level,
+    }
+}
+
+/// 按显式能力生成 Codex 模型目录，使用中文说明与统一的默认档位。
 pub fn catalog_entry(model: &ModelConfig) -> AppResult<Value> {
     let window = model
         .context_window
@@ -174,7 +198,7 @@ pub fn catalog_entry(model: &ModelConfig) -> AppResult<Value> {
     let levels: Vec<_> = model
         .reasoning_levels
         .iter()
-        .map(|s| json!({"effort":s,"description":s}))
+        .map(|s| json!({"effort":s,"description":reasoning_description(s)}))
         .collect();
     let mut entry = json!({
         "slug":model.model_id, "display_name":model.name, "description":model.name,
@@ -186,13 +210,13 @@ pub fn catalog_entry(model: &ModelConfig) -> AppResult<Value> {
         "effective_context_window_percent":95, "supports_parallel_tool_calls":false,
         "experimental_supported_tools":[], "input_modalities":if model.supports_images {vec!["text","image"]} else {vec!["text"]}
     });
-    if let Some(level) = model.reasoning_levels.first() {
+    if let Some(level) = default_reasoning_level(model) {
         entry["default_reasoning_level"] = json!(level);
     }
     Ok(entry)
 }
 
-/// Build the provider and a merged, separately owned catalog as a single transaction.
+/// 合并 Codex 配置与模型目录，同步上下文和默认档位并保留其他配置。
 fn codex(before: Snapshot, model: &ModelConfig) -> AppResult<Projection> {
     let mut doc = before
         .text()?
@@ -236,6 +260,8 @@ fn codex(before: Snapshot, model: &ModelConfig) -> AppResult<Projection> {
     let new_entry = catalog_entry(model)?;
     if let Some(entry) = rows.iter_mut().find(|r| r["slug"] == model.model_id) {
         let obj = entry.as_object_mut().unwrap();
+        // 清空支持档位后，不能保留旧目录中的默认档位。
+        obj.remove("default_reasoning_level");
         for (k, v) in new_entry.as_object().unwrap() {
             obj.insert(k.clone(), v.clone());
         }
@@ -271,7 +297,12 @@ fn codex(before: Snapshot, model: &ModelConfig) -> AppResult<Projection> {
     ] {
         doc.remove(key);
     }
-    if let Some(level) = model.reasoning_levels.first() {
+    let window = model
+        .context_window
+        .ok_or("应用到 Codex 前，请在高级设置填写模型上下文窗口")?;
+    doc["model_context_window"] =
+        value(i64::try_from(window).map_err(|_| "上下文窗口超出整数范围")?);
+    if let Some(level) = default_reasoning_level(model) {
         doc["model_reasoning_effort"] = value(level);
     }
     Ok(Projection {

@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -189,6 +190,101 @@ describe("model editing", () => {
       />,
     );
     await userEvent.click(screen.getByText("高级设置"));
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(128_000);
+  });
+  it("shows five Chinese reasoning levels and defaults new models to high", async () => {
+    render(
+      <ModelForm
+        initial={newModel()}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+        busy={false}
+      />,
+    );
+    await userEvent.click(screen.getByText("高级设置"));
+    const levels = within(
+      screen.getByRole("group", { name: /支持的思考强度/ }),
+    );
+    expect(
+      levels
+        .getAllByRole("checkbox")
+        .map((input) => input.parentElement?.textContent),
+    ).toEqual(["低", "中", "高", "超高", "极致"]);
+    expect(levels.getByRole("checkbox", { name: "高" })).toBeChecked();
+    expect(
+      levels
+        .getAllByRole("checkbox")
+        .filter((input) => (input as HTMLInputElement).checked),
+    ).toHaveLength(1);
+    const independent = newModel();
+    independent.reasoningLevels.push("low");
+    expect(newModel().reasoningLevels).toEqual(["high"]);
+  });
+
+  it.each([
+    { reasoningLevels: [] },
+    { reasoningLevels: ["none", "minimal", "low"] },
+  ])(
+    "preserves saved reasoning levels $reasoningLevels and hidden values on save",
+    async ({ reasoningLevels }) => {
+      const saved = { ...sample, reasoningLevels };
+      const save = vi.fn();
+      render(
+        <ModelForm
+          initial={saved}
+          onSave={save}
+          onCancel={vi.fn()}
+          busy={false}
+        />,
+      );
+      await userEvent.click(screen.getByText("高级设置"));
+      expect(screen.getByRole("checkbox", { name: "高" })).not.toBeChecked();
+      await userEvent.click(screen.getByRole("checkbox", { name: "高" }));
+      await userEvent.click(screen.getByRole("checkbox", { name: "高" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "测试模型" })).toBeEnabled(),
+      );
+      await userEvent.click(screen.getByRole("button", { name: "测试模型" }));
+      await userEvent.click(screen.getByRole("button", { name: "保存模型" }));
+      expect(save).toHaveBeenCalledWith(saved, successfulTest);
+    },
+  );
+
+  it("uses the Codex context default on protocol changes until manually edited", async () => {
+    render(
+      <ModelForm
+        initial={newModel()}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+        busy={false}
+      />,
+    );
+    const protocol = screen.getByRole("combobox", { name: "协议" });
+    await userEvent.selectOptions(protocol, "openai-responses");
+    const context = screen.getByLabelText(/上下文窗口/);
+    expect(context).toHaveValue(524_288);
+    await userEvent.selectOptions(protocol, "anthropic-messages");
+    expect(context).toHaveValue(1_000_000);
+    fireEvent.change(context, { target: { value: "262144" } });
+    await userEvent.selectOptions(protocol, "openai-responses");
+    expect(context).toHaveValue(262_144);
+    await userEvent.selectOptions(protocol, "openai-chat");
+    expect(context).toHaveValue(262_144);
+  });
+
+  it("keeps saved context when changing protocols", async () => {
+    render(
+      <ModelForm
+        initial={{ ...sample, contextWindow: 128_000 }}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+        busy={false}
+      />,
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "协议" }),
+      "openai-responses",
+    );
     expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(128_000);
   });
   it("masks the key and only saves on submit", async () => {

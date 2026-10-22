@@ -27,8 +27,10 @@ import {
 import {
   agentLabels,
   defaultClaude1m,
+  modelContextDefault,
   nativeAgent,
   protocolLabels,
+  reasoningOptions,
   modelTestKey,
   modelTestSuccess,
   type AgentKind,
@@ -222,6 +224,10 @@ export function ModelForm({
   const [testing, setTesting] = useState(false);
   const editing = !!initial.id;
   const namedModel = editing || copy;
+  const contextCustomized = useRef(
+    namedModel ||
+      initial.contextWindow !== modelContextDefault(initial.protocol),
+  );
   const [catalog, setCatalog] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState("");
@@ -292,8 +298,9 @@ export function ModelForm({
         setCatalogLoading(false);
     }
   }
-  /** Update one typed field while keeping every other draft value intact. */
+  /** 更新草稿字段，切换协议时仅调整未经自定义的新建模型上下文。 */
   function update<K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) {
+    if (key === "contextWindow") contextCustomized.current = true;
     if (key === "name") generatedNamePrefix.current = null;
     if (["protocol", "baseUrl", "apiKey"].includes(key)) {
       catalogVersion.current += 1;
@@ -318,6 +325,9 @@ export function ModelForm({
           ? { modelId: "" }
           : {}),
       };
+      if (key === "protocol" && !contextCustomized.current) {
+        next.contextWindow = modelContextDefault(value as Protocol);
+      }
       if (key === "modelId" && generatedNamePrefix.current !== null) {
         next.name = value
           ? `${generatedNamePrefix.current} · ${String(value)}`
@@ -569,28 +579,25 @@ export function ModelForm({
           </label>
           <fieldset className="effort-options">
             <legend>
-              模型支持的推理档位{" "}
-              <span className="optional">不确定可全部留空</span>
+              支持的思考强度 <span className="optional">不确定可全部留空</span>
             </legend>
-            {["none", "minimal", "low", "medium", "high", "xhigh", "max"].map(
-              (level) => (
-                <label key={level}>
-                  <input
-                    type="checkbox"
-                    checked={model.reasoningLevels.includes(level)}
-                    onChange={(e) =>
-                      update(
-                        "reasoningLevels",
-                        e.target.checked
-                          ? [...model.reasoningLevels, level]
-                          : model.reasoningLevels.filter((x) => x !== level),
-                      )
-                    }
-                  />
-                  {level}
-                </label>
-              ),
-            )}
+            {reasoningOptions.map(({ value: level, label }) => (
+              <label key={level}>
+                <input
+                  type="checkbox"
+                  checked={model.reasoningLevels.includes(level)}
+                  onChange={(e) =>
+                    update(
+                      "reasoningLevels",
+                      e.target.checked
+                        ? [...model.reasoningLevels, level]
+                        : model.reasoningLevels.filter((x) => x !== level),
+                    )
+                  }
+                />
+                {label}
+              </label>
+            ))}
           </fieldset>
         </div>
       </details>
