@@ -9,6 +9,7 @@ import type {
   ModelConfig,
   ModelTestResult,
   Settings,
+  InitializationOptions,
 } from "./types";
 
 export const isDesktop = isTauri();
@@ -24,6 +25,9 @@ async function call<T>(
 }
 
 export const api = {
+  /** 按用户确认的范围初始化应用数据，模型项先退出 New API 服务端会话。 */
+  initialize: (options: InitializationOptions) =>
+    call<void>("initialize_configuration", { options }),
   /** Fetch provider model identifiers using only the current connection settings. */
   listModels: (
     connection: Pick<ModelConfig, "protocol" | "baseUrl" | "apiKey">,

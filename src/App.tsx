@@ -54,6 +54,10 @@ import { McpPage } from "./McpPage";
 import { NewApiDialog } from "./NewApiDialog";
 import { NewcomerGuide } from "./NewcomerGuide";
 import {
+  InitializationSection,
+  InitializationConfirmation,
+} from "./ConfigurationInitialization";
+import {
   AgentPicker,
   ApplyReview,
   Modal,
@@ -78,12 +82,14 @@ import {
   type ModelConfig,
   type ModelTestState,
   type Settings,
+  type InitializationOptions,
 } from "./types";
 
 const isStoreBuild = import.meta.env.VITE_STORE_MSIX === "1";
 
 type Page = "models" | "backups" | "settings" | "about" | "skills" | "mcp";
 type ModalState =
+  | { kind: "initialize"; options: InitializationOptions }
   | { kind: "guide" }
   | { kind: "new-api" }
   | { kind: "model"; model: ModelConfig; copy?: boolean }
@@ -113,6 +119,7 @@ export default function App() {
   const [backupFilter, setBackupFilter] = useState<"all" | AgentKind>("all");
   const [modal, setModal] = useState<ModalState>(null);
   const [busy, setBusy] = useState(false);
+  const [initializationError, setInitializationError] = useState("");
   const [notice, setNoticeState] = useState<Notice>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
   const updateCheckRevision = useRef(0);
@@ -1004,6 +1011,10 @@ export default function App() {
                 <SettingsPage
                   data={data}
                   busy={busy}
+                  onInitialize={(options) => {
+                    setInitializationError("");
+                    setModal({ kind: "initialize", options });
+                  }}
                   onThemeSave={(theme) => {
                     setThemePreview(theme);
                     void run(async () => {
@@ -1278,6 +1289,32 @@ export default function App() {
         >
           <ShareModel model={modal.model} />
         </Modal>
+      )}
+      {modal?.kind === "initialize" && (
+        <InitializationConfirmation
+          options={modal.options}
+          busy={busy}
+          error={initializationError}
+          onClose={closeModal}
+          onConfirm={() =>
+            void run(async () => {
+              setInitializationError("");
+              try {
+                await api.initialize(modal.options);
+                if (modal.options.models) {
+                  pendingTests.current.clear();
+                  setModelTests({});
+                  setQuery("");
+                  setBackupFilter("all");
+                }
+                setLinks([]);
+                await done("配置初始化完成。");
+              } catch (error) {
+                setInitializationError(String(error));
+              }
+            })
+          }
+        />
       )}
       {modal?.kind === "delete-backup" && (
         <Modal
@@ -1578,11 +1615,13 @@ function SettingsPage({
   busy,
   onThemeSave,
   onSave,
+  onInitialize,
 }: {
   data: AppData;
   busy: boolean;
   onThemeSave: (theme: Settings["theme"]) => void;
   onSave: (settings: Settings) => void;
+  onInitialize: (options: InitializationOptions) => void;
 }) {
   const [settings, setSettings] = useState(data.settings);
   const [pickerError, setPickerError] = useState("");
@@ -1744,6 +1783,7 @@ function SettingsPage({
         </div>
         <code>{data.dataDir}</code>
       </section>
+      <InitializationSection busy={busy} onRequest={onInitialize} />
       <div className="settings-actions">
         <span>
           <ArrowDownToLine size={15} />

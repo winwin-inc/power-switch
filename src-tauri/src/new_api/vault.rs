@@ -6,6 +6,8 @@ use std::{fs, path::PathBuf};
 
 /// Store one instance's serialized login session behind the connector's existing interface.
 pub trait Vault: Send + Sync {
+    /// 列出已保存会话的实例地址，供初始化逐一退出服务端会话。
+    fn accounts(&self) -> Result<Vec<String>>;
     fn get(&self, account: &str) -> Result<Option<String>>;
     fn set(&self, account: &str, secret: &str) -> Result<()>;
     fn remove(&self, account: &str) -> Result<()>;
@@ -55,6 +57,36 @@ impl FileVault {
 }
 
 impl Vault for FileVault {
+    /// 枚举并验证全部实例会话，拒绝错误文件名、链接或混入其他实例的记录。
+    fn accounts(&self) -> Result<Vec<String>> {
+        self.check_root()?;
+        let mut accounts = vec![];
+        for entry in fs::read_dir(&self.root)
+            .map_err(|_| Error::new("storage", "无法读取 New API 会话目录"))?
+        {
+            let path = entry
+                .map_err(|_| Error::new("storage", "无法检查 New API 会话文件"))?
+                .path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            let snapshot = Snapshot::read(&path)
+                .map_err(|_| Error::new("storage", "无法安全读取 New API 登录会话"))?;
+            let record: SessionFile = serde_json::from_slice(
+                snapshot.bytes.as_deref().unwrap_or_default(),
+            )
+            .map_err(|_| Error::new("storage", "New API 登录会话文件已损坏，未清空任何数据"))?;
+            if record.version != 1
+                || self.path(&record.account) != path
+                || super::instance_url(&record.account)? != record.account
+            {
+                return Err(Error::new("storage", "New API 登录会话与实例地址不匹配"));
+            }
+            accounts.push(record.account);
+        }
+        accounts.sort();
+        Ok(accounts)
+    }
     /// Refuse damaged or mismatched records instead of silently using a different login.
     fn get(&self, account: &str) -> Result<Option<String>> {
         self.check_root()?;

@@ -23,6 +23,14 @@ const connectors: McpSummary[] = [
   },
 ];
 
+/** 清空演示自定义连接器与内置令牌，保留固定内置入口。 */
+export function resetMcpDemo() {
+  for (let index = connectors.length - 1; index >= 0; index--) {
+    if (connectors[index].builtIn) connectors[index].hasToken = false;
+    else connectors.splice(index, 1);
+  }
+}
+
 /** Provide a local-only browser preview without sending test requests or writing Agent files. */
 export async function demoMcp(
   command: string,

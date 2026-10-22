@@ -47,6 +47,22 @@ export async function demoCall(
   command: string,
   args: Record<string, unknown> = {},
 ): Promise<unknown> {
+  if (command === "initialize_configuration") {
+    const options = args.options as import("./types").InitializationOptions;
+    if (!options.models && !options.mcp)
+      throw new Error("请至少选择一项初始化内容");
+    if (options.models) {
+      models.splice(0);
+      settings.newApiUrl = null;
+      const { resetNewApiDemo } = await import("./new-api-demo");
+      resetNewApiDemo();
+    }
+    if (options.mcp) {
+      const { resetMcpDemo } = await import("./mcp-demo");
+      resetMcpDemo();
+    }
+    return;
+  }
   if (command === "list_models") {
     const connection = args.connection as ModelConfig;
     return connection.protocol === "anthropic-messages"

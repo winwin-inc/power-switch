@@ -5,6 +5,12 @@ import type { ModelConfig } from "./types";
 let connected = false;
 const imported = new Map<string, NewApiImported>();
 
+/** 初始化演示会话与导入记录，绝不访问真实 New API 实例。 */
+export function resetNewApiDemo() {
+  connected = false;
+  imported.clear();
+}
+
 /** Simulate the connector in memory only; browser previews never contact a real New API instance. */
 export async function newApiDemo(
   command: string,
