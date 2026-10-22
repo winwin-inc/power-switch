@@ -136,6 +136,13 @@ export const reasoningOptions = [
   { value: "max", label: "极致" },
 ];
 
+/** 兼容旧版多档位数据，显示与 Codex 配置一致的唯一默认档位。 */
+export function selectedReasoningLevel(levels: string[]): string | undefined {
+  return levels.includes(defaultReasoningLevel)
+    ? defaultReasoningLevel
+    : levels[0];
+}
+
 /** 按协议返回新建模型的上下文默认值，Codex 使用较小的窗口。 */
 export function modelContextDefault(protocol: Protocol): number {
   return protocol === "openai-responses"

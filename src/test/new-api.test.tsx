@@ -166,23 +166,39 @@ describe("New API connector", () => {
     render(<NewApiDialog onClose={vi.fn()} onAdded={vi.fn()} />);
     await screen.findByRole("option", { name: "chat-model" });
     await userEvent.click(screen.getByText("模型能力设置"));
-    const levels = within(
-      screen.getByRole("group", { name: /支持的思考强度/ }),
-    );
+    const levels = within(screen.getByRole("radiogroup", { name: "思考强度" }));
     expect(
       levels
-        .getAllByRole("checkbox")
+        .getAllByRole("radio")
         .map((input) => input.parentElement?.textContent),
     ).toEqual(["低", "中", "高", "超高", "极致"]);
-    expect(levels.getByRole("checkbox", { name: "高" })).toBeChecked();
-    await userEvent.click(levels.getByRole("checkbox", { name: "高" }));
-    await userEvent.click(levels.getByRole("checkbox", { name: "低" }));
+    expect(levels.getByRole("radio", { name: "高" })).toBeChecked();
+    await userEvent.click(levels.getByRole("radio", { name: "低" }));
+    expect(levels.getByRole("radio", { name: "高" })).not.toBeChecked();
+    expect(levels.getByRole("radio", { name: "低" })).toBeChecked();
     await userEvent.selectOptions(
       screen.getByRole("combobox", { name: /^模型/ }),
       "chat-model",
     );
-    expect(levels.getByRole("checkbox", { name: "高" })).toBeChecked();
-    expect(levels.getByRole("checkbox", { name: "低" })).not.toBeChecked();
+    expect(levels.getByRole("radio", { name: "高" })).toBeChecked();
+    expect(levels.getByRole("radio", { name: "低" })).not.toBeChecked();
+  });
+
+  it("submits only the selected reasoning level after switching radio options", async () => {
+    render(<NewApiDialog onClose={vi.fn()} onAdded={vi.fn()} />);
+    await screen.findByRole("option", { name: "chat-model" });
+    await userEvent.click(screen.getByText("模型能力设置"));
+    await userEvent.click(screen.getByRole("radio", { name: "超高" }));
+    await userEvent.click(screen.getByRole("radio", { name: "极致" }));
+    expect(screen.getByRole("radio", { name: "超高" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "高" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "极致" })).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "创建并添加" }));
+    await waitFor(() =>
+      expect(newApi.importModel).toHaveBeenCalledWith(
+        expect.objectContaining({ reasoningLevels: ["max"] }),
+      ),
+    );
   });
 
   it("preserves custom context when changing clients and models", async () => {

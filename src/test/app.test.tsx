@@ -202,18 +202,16 @@ describe("model editing", () => {
       />,
     );
     await userEvent.click(screen.getByText("高级设置"));
-    const levels = within(
-      screen.getByRole("group", { name: /支持的思考强度/ }),
-    );
+    const levels = within(screen.getByRole("radiogroup", { name: "思考强度" }));
     expect(
       levels
-        .getAllByRole("checkbox")
+        .getAllByRole("radio")
         .map((input) => input.parentElement?.textContent),
     ).toEqual(["低", "中", "高", "超高", "极致"]);
-    expect(levels.getByRole("checkbox", { name: "高" })).toBeChecked();
+    expect(levels.getByRole("radio", { name: "高" })).toBeChecked();
     expect(
       levels
-        .getAllByRole("checkbox")
+        .getAllByRole("radio")
         .filter((input) => (input as HTMLInputElement).checked),
     ).toHaveLength(1);
     const independent = newModel();
@@ -238,9 +236,7 @@ describe("model editing", () => {
         />,
       );
       await userEvent.click(screen.getByText("高级设置"));
-      expect(screen.getByRole("checkbox", { name: "高" })).not.toBeChecked();
-      await userEvent.click(screen.getByRole("checkbox", { name: "高" }));
-      await userEvent.click(screen.getByRole("checkbox", { name: "高" }));
+      expect(screen.getByRole("radio", { name: "高" })).not.toBeChecked();
       await waitFor(() =>
         expect(screen.getByRole("button", { name: "测试模型" })).toBeEnabled(),
       );
@@ -249,6 +245,37 @@ describe("model editing", () => {
       expect(save).toHaveBeenCalledWith(saved, successfulTest);
     },
   );
+
+  it("shows one default for legacy multi-level models and saves only the newly selected level", async () => {
+    const saved = { ...sample, reasoningLevels: ["low", "high", "xhigh"] };
+    const save = vi.fn();
+    render(
+      <ModelForm
+        initial={saved}
+        onSave={save}
+        onCancel={vi.fn()}
+        busy={false}
+      />,
+    );
+    await userEvent.click(screen.getByText("高级设置"));
+    const levels = within(screen.getByRole("radiogroup", { name: "思考强度" }));
+    expect(levels.getByRole("radio", { name: "高" })).toBeChecked();
+    expect(levels.getByRole("radio", { name: "低" })).not.toBeChecked();
+    expect(levels.getByRole("radio", { name: "超高" })).not.toBeChecked();
+    await userEvent.click(levels.getByRole("radio", { name: "中" }));
+    await userEvent.click(levels.getByRole("radio", { name: "中" }));
+    expect(levels.getByRole("radio", { name: "中" })).toBeChecked();
+    expect(levels.getByRole("radio", { name: "高" })).not.toBeChecked();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "测试模型" })).toBeEnabled(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "测试模型" }));
+    await userEvent.click(screen.getByRole("button", { name: "保存模型" }));
+    expect(save).toHaveBeenCalledWith(
+      { ...saved, reasoningLevels: ["medium"] },
+      successfulTest,
+    );
+  });
 
   it("uses the Codex context default on protocol changes until manually edited", async () => {
     render(

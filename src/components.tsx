@@ -31,6 +31,7 @@ import {
   nativeAgent,
   protocolLabels,
   reasoningOptions,
+  selectedReasoningLevel,
   modelTestKey,
   modelTestSuccess,
   type AgentKind,
@@ -577,23 +578,17 @@ export function ModelForm({
               应用到 Codex 时必须填写实际上下文窗口。
             </span>
           </label>
-          <fieldset className="effort-options">
-            <legend>
-              支持的思考强度 <span className="optional">不确定可全部留空</span>
-            </legend>
+          <fieldset className="effort-options" role="radiogroup">
+            <legend>思考强度</legend>
             {reasoningOptions.map(({ value: level, label }) => (
               <label key={level}>
                 <input
-                  type="checkbox"
-                  checked={model.reasoningLevels.includes(level)}
-                  onChange={(e) =>
-                    update(
-                      "reasoningLevels",
-                      e.target.checked
-                        ? [...model.reasoningLevels, level]
-                        : model.reasoningLevels.filter((x) => x !== level),
-                    )
+                  type="radio"
+                  name="model-reasoning-level"
+                  checked={
+                    selectedReasoningLevel(model.reasoningLevels) === level
                   }
+                  onChange={() => update("reasoningLevels", [level])}
                 />
                 {label}
               </label>

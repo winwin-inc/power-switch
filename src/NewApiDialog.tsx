@@ -568,21 +568,16 @@ export function NewApiDialog({
                     图像输入
                   </label>
                 </div>
-                <fieldset className="effort-options">
-                  <legend>支持的思考强度（不确定可留空）</legend>
+                <fieldset className="effort-options" role="radiogroup">
+                  <legend>思考强度</legend>
                   {reasoningOptions.map(({ value: level, label }) => (
                     <label key={level}>
                       <input
-                        type="checkbox"
+                        type="radio"
+                        name="new-api-reasoning-level"
                         disabled={Boolean(busy)}
-                        checked={reasoning.includes(level)}
-                        onChange={(e) =>
-                          setReasoning(
-                            e.target.checked
-                              ? [...reasoning, level]
-                              : reasoning.filter((value) => value !== level),
-                          )
-                        }
+                        checked={reasoning[0] === level}
+                        onChange={() => setReasoning([level])}
                       />
                       {label}
                     </label>
