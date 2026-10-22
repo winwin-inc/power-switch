@@ -25,7 +25,9 @@ import {
 } from "./new-api-api";
 import {
   agentLabels,
-  defaultContextWindow,
+  defaultReasoningLevel,
+  modelContextDefault,
+  reasoningOptions,
   type AgentKind,
   type Protocol,
 } from "./types";
@@ -55,10 +57,13 @@ export function NewApiDialog({
   const [agent, setAgent] = useState<AgentKind>("workbuddy");
   const [modelId, setModelId] = useState("");
   const [platformName, setPlatformName] = useState("winwin");
-  const [context, setContext] = useState(String(defaultContextWindow));
+  const [context, setContext] = useState(
+    String(modelContextDefault(agentProtocol[agent])),
+  );
+  const contextCustomized = useRef(false);
   const [tools, setTools] = useState(true);
   const [images, setImages] = useState(true);
-  const [reasoning, setReasoning] = useState<string[]>([]);
+  const [reasoning, setReasoning] = useState<string[]>([defaultReasoningLevel]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState<NewApiError | null>(null);
   const [created, setCreated] = useState<NewApiImported | null>(null);
@@ -168,11 +173,12 @@ export function NewApiDialog({
       );
   }, [catalog, protocol, modelId]);
   useEffect(() => {
-    setContext(String(defaultContextWindow));
-    setReasoning([]);
+    if (!contextCustomized.current)
+      setContext(String(modelContextDefault(protocol)));
+    setReasoning([defaultReasoningLevel]);
     setReplaceInvalid(false);
     setRestartUncertain(false);
-  }, [modelId]);
+  }, [modelId, protocol]);
 
   /** Serialize visible actions and discard late responses after this dialog has closed. */
   async function run(label: string, action: () => Promise<void>) {
@@ -535,7 +541,10 @@ export function NewApiDialog({
                     value={context}
                     disabled={Boolean(busy)}
                     onWheel={blurNumberOnWheel}
-                    onChange={(e) => setContext(e.target.value)}
+                    onChange={(e) => {
+                      contextCustomized.current = true;
+                      setContext(e.target.value);
+                    }}
                     placeholder="按实际模型能力填写"
                   />
                 </label>
@@ -559,31 +568,18 @@ export function NewApiDialog({
                     图像输入
                   </label>
                 </div>
-                <fieldset className="effort-options">
-                  <legend>推理档位（不确定可留空）</legend>
-                  {[
-                    "none",
-                    "minimal",
-                    "low",
-                    "medium",
-                    "high",
-                    "xhigh",
-                    "max",
-                  ].map((level) => (
+                <fieldset className="effort-options" role="radiogroup">
+                  <legend>思考强度</legend>
+                  {reasoningOptions.map(({ value: level, label }) => (
                     <label key={level}>
                       <input
-                        type="checkbox"
+                        type="radio"
+                        name="new-api-reasoning-level"
                         disabled={Boolean(busy)}
-                        checked={reasoning.includes(level)}
-                        onChange={(e) =>
-                          setReasoning(
-                            e.target.checked
-                              ? [...reasoning, level]
-                              : reasoning.filter((value) => value !== level),
-                          )
-                        }
+                        checked={reasoning[0] === level}
+                        onChange={() => setReasoning([level])}
                       />
-                      {level}
+                      {label}
                     </label>
                   ))}
                 </fieldset>

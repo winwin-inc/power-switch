@@ -27,8 +27,11 @@ import {
 import {
   agentLabels,
   defaultClaude1m,
+  modelContextDefault,
   nativeAgent,
   protocolLabels,
+  reasoningOptions,
+  selectedReasoningLevel,
   modelTestKey,
   modelTestSuccess,
   type AgentKind,
@@ -222,6 +225,10 @@ export function ModelForm({
   const [testing, setTesting] = useState(false);
   const editing = !!initial.id;
   const namedModel = editing || copy;
+  const contextCustomized = useRef(
+    namedModel ||
+      initial.contextWindow !== modelContextDefault(initial.protocol),
+  );
   const [catalog, setCatalog] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState("");
@@ -292,8 +299,9 @@ export function ModelForm({
         setCatalogLoading(false);
     }
   }
-  /** Update one typed field while keeping every other draft value intact. */
+  /** 更新草稿字段，切换协议时仅调整未经自定义的新建模型上下文。 */
   function update<K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) {
+    if (key === "contextWindow") contextCustomized.current = true;
     if (key === "name") generatedNamePrefix.current = null;
     if (["protocol", "baseUrl", "apiKey"].includes(key)) {
       catalogVersion.current += 1;
@@ -318,6 +326,9 @@ export function ModelForm({
           ? { modelId: "" }
           : {}),
       };
+      if (key === "protocol" && !contextCustomized.current) {
+        next.contextWindow = modelContextDefault(value as Protocol);
+      }
       if (key === "modelId" && generatedNamePrefix.current !== null) {
         next.name = value
           ? `${generatedNamePrefix.current} · ${String(value)}`
@@ -567,30 +578,21 @@ export function ModelForm({
               应用到 Codex 时必须填写实际上下文窗口。
             </span>
           </label>
-          <fieldset className="effort-options">
-            <legend>
-              模型支持的推理档位{" "}
-              <span className="optional">不确定可全部留空</span>
-            </legend>
-            {["none", "minimal", "low", "medium", "high", "xhigh", "max"].map(
-              (level) => (
-                <label key={level}>
-                  <input
-                    type="checkbox"
-                    checked={model.reasoningLevels.includes(level)}
-                    onChange={(e) =>
-                      update(
-                        "reasoningLevels",
-                        e.target.checked
-                          ? [...model.reasoningLevels, level]
-                          : model.reasoningLevels.filter((x) => x !== level),
-                      )
-                    }
-                  />
-                  {level}
-                </label>
-              ),
-            )}
+          <fieldset className="effort-options" role="radiogroup">
+            <legend>思考强度</legend>
+            {reasoningOptions.map(({ value: level, label }) => (
+              <label key={level}>
+                <input
+                  type="radio"
+                  name="model-reasoning-level"
+                  checked={
+                    selectedReasoningLevel(model.reasoningLevels) === level
+                  }
+                  onChange={() => update("reasoningLevels", [level])}
+                />
+                {label}
+              </label>
+            ))}
           </fieldset>
         </div>
       </details>

@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NewApiDialog } from "../NewApiDialog";
 import { api } from "../api";
@@ -131,6 +137,7 @@ describe("New API connector", () => {
         name: "winwin · auto",
         protocol: "openai-chat",
         contextWindow: 1_000_000,
+        reasoningLevels: ["high"],
         replaceInvalid: false,
         restartUncertain: false,
       }),
@@ -155,7 +162,71 @@ describe("New API connector", () => {
     expect(newApi.test).toHaveBeenCalledWith("owned-model");
   });
 
-  it("offers Codex candidates even when New API labels them openai", async () => {
+  it("shows Chinese reasoning levels and resets them to high on model changes", async () => {
+    render(<NewApiDialog onClose={vi.fn()} onAdded={vi.fn()} />);
+    await screen.findByRole("option", { name: "chat-model" });
+    await userEvent.click(screen.getByText("模型能力设置"));
+    const levels = within(screen.getByRole("radiogroup", { name: "思考强度" }));
+    expect(
+      levels
+        .getAllByRole("radio")
+        .map((input) => input.parentElement?.textContent),
+    ).toEqual(["低", "中", "高", "超高", "极致"]);
+    expect(levels.getByRole("radio", { name: "高" })).toBeChecked();
+    await userEvent.click(levels.getByRole("radio", { name: "低" }));
+    expect(levels.getByRole("radio", { name: "高" })).not.toBeChecked();
+    expect(levels.getByRole("radio", { name: "低" })).toBeChecked();
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: /^模型/ }),
+      "chat-model",
+    );
+    expect(levels.getByRole("radio", { name: "高" })).toBeChecked();
+    expect(levels.getByRole("radio", { name: "低" })).not.toBeChecked();
+  });
+
+  it("submits only the selected reasoning level after switching radio options", async () => {
+    render(<NewApiDialog onClose={vi.fn()} onAdded={vi.fn()} />);
+    await screen.findByRole("option", { name: "chat-model" });
+    await userEvent.click(screen.getByText("模型能力设置"));
+    await userEvent.click(screen.getByRole("radio", { name: "超高" }));
+    await userEvent.click(screen.getByRole("radio", { name: "极致" }));
+    expect(screen.getByRole("radio", { name: "超高" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "高" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "极致" })).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "创建并添加" }));
+    await waitFor(() =>
+      expect(newApi.importModel).toHaveBeenCalledWith(
+        expect.objectContaining({ reasoningLevels: ["max"] }),
+      ),
+    );
+  });
+
+  it("preserves custom context when changing clients and models", async () => {
+    render(<NewApiDialog onClose={vi.fn()} onAdded={vi.fn()} />);
+    await screen.findByRole("option", { name: "chat-model" });
+    await userEvent.click(screen.getByText("模型能力设置"));
+    const context = screen.getByLabelText(/上下文窗口/);
+    fireEvent.change(context, { target: { value: "262144" } });
+    await userEvent.selectOptions(screen.getByLabelText("目标客户端"), "codex");
+    expect(context).toHaveValue(262_144);
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: /^模型/ }),
+      "responses-model",
+    );
+    expect(context).toHaveValue(262_144);
+    await userEvent.click(screen.getByRole("button", { name: "创建并添加" }));
+    await waitFor(() =>
+      expect(newApi.importModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          protocol: "openai-responses",
+          contextWindow: 262_144,
+          reasoningLevels: ["high"],
+        }),
+      ),
+    );
+  });
+
+  it("offers Codex candidates with a smaller context default even when New API labels them openai", async () => {
     render(
       <NewApiDialog
         onClose={vi.fn()}
@@ -166,6 +237,10 @@ describe("New API connector", () => {
     const client = screen.getByLabelText("目标客户端");
     expect(client.querySelector('option[value="codex"]')).toBeEnabled();
     await userEvent.selectOptions(client, "codex");
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(524_288);
+    await userEvent.selectOptions(client, "claude");
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(1_000_000);
+    await userEvent.selectOptions(client, "codex");
     expect(
       screen.getByRole("option", { name: "responses-model" }),
     ).toBeInTheDocument();
@@ -174,6 +249,16 @@ describe("New API connector", () => {
     expect(
       screen.queryByRole("option", { name: "chat-model" }),
     ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "创建并添加" }));
+    await waitFor(() =>
+      expect(newApi.importModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          protocol: "openai-responses",
+          contextWindow: 524_288,
+          reasoningLevels: ["high"],
+        }),
+      ),
+    );
   });
 
   it("lets an uncertain creation reconcile before the user explicitly opts into a new attempt", async () => {

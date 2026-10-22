@@ -636,6 +636,77 @@ fn codex_preserves_catalog_comments_auth_and_other_providers() {
     assert!(!dir.join("power-switch-models.json").exists());
 }
 
+/// 中文说明不改变任何档位的英文协议标识，包括旧版隐藏档位。
+#[test]
+fn codex_reasoning_descriptions_are_chinese() {
+    let mut model = model(Protocol::OpenaiResponses);
+    model.reasoning_levels = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+        .map(String::from)
+        .to_vec();
+    let entry = adapters::catalog_entry(&model).unwrap();
+    let levels = entry["supported_reasoning_levels"].as_array().unwrap();
+    for ((level, description), row) in model
+        .reasoning_levels
+        .iter()
+        .zip(["无", "极低", "低", "中", "高", "超高", "极致"])
+        .zip(levels)
+    {
+        assert_eq!(row["effort"], *level);
+        assert_eq!(row["description"], description);
+    }
+}
+
+/// 实际生成的 TOML 与目录共享上下文和档位默认值，并保留用户自定义窗口。
+#[test]
+fn codex_context_and_reasoning_defaults_match_catalog() {
+    for context in [524_288, 262_144] {
+        let (_temp, mut engine) = isolated();
+        let mut draft = model(Protocol::OpenaiResponses);
+        draft.context_window = Some(context);
+        let mut saved = engine.upsert(draft).unwrap();
+        // 最后一轮清空列表，同时验证旧目录中的 high 默认值被清除。
+        for (levels, expected) in [
+            (vec!["max", "low", "high"], Some("high")),
+            (vec!["xhigh", "medium"], Some("medium")),
+            (vec!["none", "minimal"], Some("none")),
+            (vec!["high"], Some("high")),
+            (vec![], None),
+        ] {
+            saved.reasoning_levels = levels.into_iter().map(String::from).collect();
+            saved = engine.upsert(saved).unwrap();
+            let preview = engine
+                .preview_apply(&saved.id, &[AgentKind::Codex])
+                .unwrap();
+            engine.apply(&preview.token).unwrap();
+            let dir = engine.paths.home.join(".codex");
+            let config: toml::Value = fs::read_to_string(dir.join("config.toml"))
+                .unwrap()
+                .parse()
+                .unwrap();
+            let catalog: Value =
+                serde_json::from_slice(&fs::read(dir.join("power-switch-models.json")).unwrap())
+                    .unwrap();
+            let entry = &catalog["models"][0];
+            assert_eq!(
+                config["model_context_window"].as_integer(),
+                Some(context as i64)
+            );
+            assert_eq!(entry["context_window"], context);
+            assert_eq!(entry["max_context_window"], context);
+            assert_eq!(
+                config
+                    .get("model_reasoning_effort")
+                    .and_then(toml::Value::as_str),
+                expected
+            );
+            assert_eq!(
+                entry.get("default_reasoning_level").and_then(Value::as_str),
+                expected
+            );
+        }
+    }
+}
+
 /// An upstream catalog change also invalidates a projection that copied its contents.
 #[test]
 fn catalog_dependencies_are_fingerprinted() {
