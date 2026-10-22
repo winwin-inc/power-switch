@@ -147,6 +147,37 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// 生成只清理应用数据的初始化计划，保留外观、路径和客户端配置。
+    pub fn prepare_initialization(
+        &self,
+        options: crate::initialization::InitializationOptions,
+    ) -> AppResult<crate::initialization::InitializationPlan> {
+        options.validate()?;
+        files::private_dir(&self.paths.data)?;
+        let models = if options.models {
+            let mut store = self.load()?;
+            store.models.clear();
+            store.settings.new_api_url = None;
+            Some(serde_json::to_vec_pretty(&store).map_err(|_| "无法生成初始化配置")?)
+        } else {
+            None
+        };
+        crate::initialization::InitializationPlan::prepare(&self.paths, options, models)
+    }
+
+    /// 完成清理后失效所有旧写入预览及导入缓存，避免凭据被旧操作恢复。
+    pub fn complete_initialization(
+        &mut self,
+        plan: crate::initialization::InitializationPlan,
+    ) -> AppResult<()> {
+        let models = plan.options.models;
+        plan.commit()?;
+        self.pending.clear();
+        if models {
+            self.imports.clear();
+        }
+        Ok(())
+    }
     /// Hold an exclusive app-data lock and initialize private storage without reading Agent secrets.
     pub fn open(paths: Paths) -> AppResult<Self> {
         files::private_dir(&paths.data)?;

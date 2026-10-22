@@ -39,7 +39,7 @@ pub fn setup(app: &AppHandle, data: std::path::PathBuf) {
 }
 
 /// Only the trusted local main window can invoke connector operations.
-fn require_main(window: &WebviewWindow) -> Result<()> {
+pub(crate) fn require_main(window: &WebviewWindow) -> Result<()> {
     let url = window
         .url()
         .map_err(|_| Error::new("forbidden", "无法验证本地窗口来源"))?;
@@ -53,6 +53,20 @@ fn require_main(window: &WebviewWindow) -> Result<()> {
         return Err(Error::new("forbidden", "此窗口不能访问本地 New API 凭证"));
     }
     Ok(())
+}
+
+/// 在初始化前取消所有授权交换并关闭本次应用创建的 New API 登录窗口。
+pub(crate) fn cancel_all_logins(app: &AppHandle) {
+    if let Ok(mut flows) = app.state::<LoginCancels>().0.lock() {
+        for (_, flag) in flows.drain() {
+            flag.store(true, Ordering::SeqCst);
+        }
+    }
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("new-api-login-") {
+            let _ = window.close();
+        }
+    }
 }
 
 /// Inspect an instance without requesting credentials or starting an OAuth flow.

@@ -47,6 +47,10 @@ Codex 只接受 OpenAI Responses。当前 New API 实例的 `/api/pricing` 对 `
 
 ## 测试和版本范围
 
+设置页的 **配置初始化 → 模型库和模型备份** 会先注销所有保存在本机的 New API 实例会话，再清空模型、备份、实例地址和本机 New API 会话及关联记录。Cookie 会话调用 `GET /api/user/logout`，Bearer 会话携带刷新 Cookie 和实例 `Origin` 调用 `POST /api/user/auth/logout`；接口分别依据 [rc.21 路由](https://github.com/QuantumNous/new-api/blob/v1.0.0-rc.21/router/api-router.go) 和 [rc.40 路由](https://github.com/QuantumNous/new-api/blob/v1.0.0-rc.40/router/api-router.go)。已失效的会话可继续清理；网络或服务端错误会停止初始化，保留本机数据供重试。不会撤销服务端的模型 API Key，也不执行服务端数据初始化。
+
+**MCP 连接器配置** 可单独选择：删除用户添加的连接器，内置入口保留但令牌清空，不触碰 New API 会话。两个选项默认不勾选，至少选择一项并再次确认才能执行。初始化不产生新的敏感备份；本地写入失败时尝试恢复原有数据，同时失效旧预览。已经写入 Agent 的配置、外观和路径设置、Skills 不在初始化范围内。
+
 自动化测试使用本机模拟 HTTP 服务、内存凭证库和临时目录，不访问生产账号。覆盖 OAuth state／回调／重放／取消／超时、账号隔离、密钥响应丢失和恢复、重复导入、协议筛选、失效密钥、私有存储及按需推理测试。
 
 ```sh

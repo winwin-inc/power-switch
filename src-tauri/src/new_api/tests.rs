@@ -13,6 +13,10 @@ use wiremock::{
 struct MemoryVault(Arc<Mutex<HashMap<String, String>>>);
 
 impl Vault for MemoryVault {
+    /// 返回本测试保存的全部实例，供批量注销流程使用。
+    fn accounts(&self) -> Result<Vec<String>> {
+        Ok(self.0.lock().unwrap().keys().cloned().collect())
+    }
     /// Return test secrets without touching the real macOS keychain.
     fn get(&self, account: &str) -> Result<Option<String>> {
         Ok(self.0.lock().unwrap().get(account).cloned())

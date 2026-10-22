@@ -600,8 +600,8 @@ impl NewApi {
         }
     }
 
-    /// Save only into an OS secret store; no fallback plaintext file is permitted.
-    fn persist_session(&self, session: &Session) -> Result<()> {
+    /// 读取当前会话的私有凭据快照，不共享 HTTP Cookie 容器或修改登录文件。
+    fn saved_session(&self, session: &Session) -> Result<SavedSession> {
         let auth = match &session.auth {
             SessionAuth::Cookie => SavedAuth::Cookie {
                 cookie: session.client.session_cookie("session", "/")?,
@@ -622,15 +622,105 @@ impl NewApi {
                 session_id: session_id.clone(),
             },
         };
-        let saved = SavedSession {
+        Ok(SavedSession {
             base_url: session.client.base.clone(),
             user: session.user.clone(),
             expires_at: session.expires_at,
             auth,
-        };
+        })
+    }
+
+    /// 把会话原子保存到应用自有的私有会话目录。
+    fn persist_session(&self, session: &Session) -> Result<()> {
+        let saved = self.saved_session(session)?;
         let raw =
             serde_json::to_string(&saved).map_err(|_| Error::new("keychain", "会话序列化失败"))?;
         self.vault.set(&session.client.base, &raw)
+    }
+
+    /// 初始化时先注销所有实例的服务端会话，成功前不删除任何本机会话文件。
+    pub async fn logout_for_initialization(&self) -> Result<()> {
+        let mut accounts = self.vault.accounts()?;
+        if let Some(session) = &self.session {
+            accounts.push(session.client.base.clone());
+        }
+        accounts.sort();
+        accounts.dedup();
+        let mut clients = vec![];
+        for base in accounts {
+            let saved = if let Some(session) = self
+                .session
+                .as_ref()
+                .filter(|session| session.client.base == base)
+            {
+                self.saved_session(session)?
+            } else {
+                let raw = self
+                    .vault
+                    .get(&base)?
+                    .ok_or_else(|| Error::new("storage", "New API 会话已变化，请重试"))?;
+                match serde_json::from_str::<StoredSession>(&raw).map_err(|_| {
+                    Error::new("storage", "New API 登录会话文件已损坏，未执行初始化")
+                })? {
+                    StoredSession::Current(saved) => saved,
+                    StoredSession::Legacy(old) => SavedSession {
+                        base_url: old.base_url,
+                        user: old.user,
+                        expires_at: old.expires_at,
+                        auth: SavedAuth::Cookie { cookie: old.cookie },
+                    },
+                }
+            };
+            if instance_url(&base)? != base || saved.base_url != base {
+                return Err(Error::new("storage", "New API 会话与实例地址不匹配"));
+            }
+            let mut client = ApiClient::new(&base)?;
+            let bearer = match saved.auth {
+                SavedAuth::Cookie { cookie } => {
+                    client.restore_cookie(&cookie, "session", "/")?;
+                    false
+                }
+                SavedAuth::Bearer {
+                    access_token,
+                    refresh_cookie,
+                    ..
+                } => {
+                    client.restore_cookie(&refresh_cookie, "new_api_refresh", "/api/user/auth")?;
+                    client.set_access_token(access_token);
+                    true
+                }
+            };
+            clients.push((client, bearer));
+        }
+        for (client, bearer) in clients {
+            let request = if bearer {
+                client
+                    .management(Method::POST, "/api/user/auth/logout", None)
+                    .header("Origin", &client.base)
+                    .json(&json!({}))
+            } else {
+                client.management(Method::GET, "/api/user/logout", None)
+            };
+            if let Err(error) = client.api(request).await {
+                if error.code != "login_required" {
+                    return Err(Error::new(
+                        "logout",
+                        format!(
+                            "New API 服务端退出失败：{}；本地数据尚未清空，请重试",
+                            error.message
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 仅在初始化本地事务提交成功后丢弃内存会话和未完成授权。
+    pub fn finish_initialization(&mut self) {
+        self.session = None;
+        self.pending = None;
+        self.last_error = None;
     }
 
     /// Remove local authorization without deleting model keys or calling the shared PAT generator.

@@ -200,6 +200,29 @@ fn save_settings(state: Shared<'_>, settings: Settings) -> AppResult<()> {
 fn save_new_api_url(state: Shared<'_>, url: String) -> AppResult<()> {
     with_engine(state, |e| e.new_api_url(url))
 }
+
+/// 先完成所选模型范围的服务端注销，再提交可回滚的本地初始化事务。
+#[tauri::command]
+async fn initialize_configuration(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: Shared<'_>,
+    connector: State<'_, crate::new_api_desktop::Connector>,
+    verified: Verifications<'_>,
+    options: crate::initialization::InitializationOptions,
+) -> AppResult<()> {
+    crate::new_api_desktop::require_main(&window).map_err(|error| error.message)?;
+    options.validate()?;
+    if options.models {
+        crate::new_api_desktop::cancel_all_logins(&app);
+    }
+    let mut service = connector.lock().await;
+    crate::initialization::initialize(&state, &mut service, options).await?;
+    if options.models {
+        verified.lock().map_err(|_| "模型验证状态不可用")?.0.clear();
+    }
+    Ok(())
+}
 /// Prepare a model application with optional Claude 1M mode for user review.
 #[tauri::command]
 fn preview_apply(
@@ -368,6 +391,7 @@ pub fn run() {
             mcp_preview_apply,
             save_settings,
             save_new_api_url,
+            initialize_configuration,
             preview_apply,
             apply_preview,
             cancel_preview,

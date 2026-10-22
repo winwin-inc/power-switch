@@ -148,7 +148,12 @@ describe("About and sidebar app updates", () => {
     const sectionTitles = screen
       .getAllByRole("heading", { level: 2 })
       .map((heading) => heading.textContent);
-    expect(sectionTitles).toEqual(["外观", "Agent 配置位置", "本地数据"]);
+    expect(sectionTitles).toEqual([
+      "外观",
+      "Agent 配置位置",
+      "本地数据",
+      "配置初始化",
+    ]);
     expect(screen.queryByRole("button", { name: "检查更新" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关于" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("关于");

@@ -55,6 +55,10 @@ export interface Settings {
   receiveRc: boolean;
   newApiUrl?: string | null;
 }
+export interface InitializationOptions {
+  models: boolean;
+  mcp: boolean;
+}
 export interface AgentPath {
   agent: AgentKind;
   path: string;
