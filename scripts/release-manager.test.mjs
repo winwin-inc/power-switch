@@ -51,23 +51,26 @@ async function fixture(t) {
   };
   for (const [file, text] of Object.entries(contents))
     await writeFile(join(root, file), text);
+  /** 为每次测试 Git 命令指定临时身份，覆盖提交和标签且不修改用户配置。 */
   const git = (...args) =>
-    execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Release Test",
+        "-c",
+        "user.email=release@example.invalid",
+        ...args,
+      ],
+      {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    ).trim();
   git("init", "-q", "--initial-branch=master");
   git("add", "--", ...Object.keys(contents));
-  git(
-    "-c",
-    "user.name=Release Test",
-    "-c",
-    "user.email=release@example.invalid",
-    "commit",
-    "-qm",
-    "fixture",
-  );
+  git("commit", "-qm", "fixture");
   git("remote", "add", "origin", `git@github.com:${repo}.git`);
   git("update-ref", "refs/remotes/origin/master", "HEAD");
   const calls = [],
@@ -86,14 +89,6 @@ async function fixture(t) {
         return "";
       }
       if (args[0] === "fetch") return "";
-      if (args[0] === "commit")
-        return git(
-          "-c",
-          "user.name=Release Test",
-          "-c",
-          "user.email=release@example.invalid",
-          ...args,
-        );
       return git(...args);
     }
     assert.equal(program, "gh", `Unexpected process: ${program}`);
