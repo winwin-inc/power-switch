@@ -145,7 +145,7 @@ just package-download RUN_ID
 
 | 系统                        | 原生运行器       | 发布文件                         |
 | --------------------------- | ---------------- | -------------------------------- |
-| macOS Intel + Apple Silicon | macos-14         | `.dmg`、`.zip`、更新器 `.tar.gz` |
+| macOS Intel + Apple Silicon | macos-15         | `.dmg`、`.zip`、更新器 `.tar.gz` |
 | Windows x64                 | windows-2022     | `.msi`、`.zip`                   |
 | Windows ARM64               | windows-11-arm   | `.msi`、`.zip`                   |
 | Linux x64                   | ubuntu-22.04     | `.AppImage`、`.deb`、`.rpm`      |

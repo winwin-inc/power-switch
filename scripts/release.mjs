@@ -18,7 +18,7 @@ export const targets = {
     extensions: ["dmg", "zip", "tar.gz"],
     installers: ["dmg"],
     bundles: "app,dmg",
-    runner: "macos-14",
+    runner: "macos-15",
     rustTargets: "aarch64-apple-darwin,x86_64-apple-darwin",
     host: "darwin",
   },
