@@ -168,12 +168,54 @@ describe("appearance settings", () => {
     expect(notice).toHaveTextContent("设置保存失败");
     expect(notice.parentElement).toHaveClass("app-shell");
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(screen.getByRole("button", { name: "浅色" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "深色" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     expect(screen.queryByText("设置已保存。")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^模型库/ }));
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
     await user.click(screen.getByRole("button", { name: "关闭提示" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("retries a failed theme save while preserving unsaved paths and the current theme on submit", async () => {
+    persistedData.agents = [
+      { agent: "workbuddy", path: "/test/workbuddy/models.json", exists: true },
+    ];
+    vi.mocked(api.settings).mockRejectedValueOnce(new Error("设置保存失败"));
+    const { user } = await renderSettings();
+    const path = screen.getByRole("textbox", { name: "WorkBuddy 配置路径" });
+    await user.type(path, "/test/unsaved/models.json");
+    await user.click(screen.getByRole("button", { name: "深色" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "浅色" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(path).toHaveValue("/test/unsaved/models.json");
+    await user.click(screen.getByRole("button", { name: "深色" }));
+    await screen.findByText("主题已保存。");
+    expect(api.settings).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "深色" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(path).toHaveValue("/test/unsaved/models.json");
+    expect(persistedData.settings.workbuddyPath).toBeNull();
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+    await screen.findByText("设置已保存。");
+    expect(api.settings).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        theme: "dark",
+        workbuddyPath: "/test/unsaved/models.json",
+      }),
+    );
   });
 
   it("expires error tips after five seconds", async () => {

@@ -1,1 +1,6 @@
-/* Native Avenir/PingFang typography keeps the desktop UI offline and avoids remote font requests. */
+/* Use native system fonts so the interface stays fast, legible, and available offline. */
+:root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+}

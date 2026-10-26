@@ -36,14 +36,14 @@
   border-top: 0;
 }
 .new-api-step-number {
-  color: var(--orange);
+  color: var(--blue);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 1px;
   padding-top: 2px;
 }
 .new-api-step-heading strong {
-  font-size: 15px;
+  font-size: 16px;
 }
 .new-api-step-heading p {
   color: var(--muted);
@@ -66,7 +66,7 @@
   line-height: 1.5;
 }
 .new-api-dialog .field {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
 }
 .new-api-dialog .field {
@@ -110,14 +110,14 @@
 }
 .new-api-account p,
 .new-api-policy p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   margin: 3px 0 0;
   color: var(--muted);
 }
 .new-api-account strong,
 .new-api-policy strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 .new-api-policy {
   display: flex;
@@ -189,7 +189,7 @@
   gap: 10px;
 }
 .new-api-progress {
-  font-size: 13px;
+  font-size: 14px;
 }
 .new-api-success {
   display: grid;
@@ -201,7 +201,7 @@
   align-items: center;
 }
 .new-api-success-title > svg {
-  color: #168761;
+  color: var(--green);
 }
 .new-api-success-title h3,
 .new-api-success-title p {
@@ -214,13 +214,13 @@
 }
 .new-api-success > p,
 .new-api-test-result {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
   margin: 0;
 }
-.new-api-dialog .modal-footer {
+.new-api-modal .modal-footer {
   margin-top: 0;
-  padding-top: 20px;
+  padding-top: 16px;
   justify-content: space-between;
 }
 .new-api-dialog .secret-input input {

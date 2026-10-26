@@ -38,7 +38,7 @@ dirs = "6"
 tempfile = "3"
 fs2 = "0.4"
 pinyin = { version = "0.11", default-features = false, features = ["plain"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "gzip", "rustls-tls"] }
 rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "reqwest"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 tauri = { version = "2", optional = true , features = [] }

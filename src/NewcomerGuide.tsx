@@ -9,7 +9,7 @@ import {
   Pause,
   ShieldCheck,
 } from "lucide-react";
-import { Modal } from "./components";
+import { Modal, ModalFooter } from "./components";
 import "./newcomer-guide.css";
 
 const guideSteps = [
@@ -42,7 +42,20 @@ export function NewcomerGuide({
   onStart: () => void;
 }) {
   const [step, setStep] = useState(0);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(
+    () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    /** Stop automatic step changes whenever the system requests reduced motion. */
+    function syncMotionPreference() {
+      if (preference.matches) setPlaying(false);
+    }
+    syncMotionPreference();
+    preference.addEventListener("change", syncMotionPreference);
+    return () => preference.removeEventListener("change", syncMotionPreference);
+  }, []);
 
   useEffect(() => {
     if (!playing) return;
@@ -145,11 +158,11 @@ export function NewcomerGuide({
             <span className="newcomer-cue">{guideSteps[step].cue}</span>
           </div>
         </div>
-        <div className="newcomer-controls">
+        <ModalFooter className="newcomer-controls">
           <button
             className="button secondary"
             aria-label={playing ? "暂停引导动画" : "播放引导动画"}
-            onClick={() => setPlaying(!playing)}
+            onClick={() => setPlaying((current) => !current)}
           >
             {playing ? <Pause size={16} /> : <Play size={16} />}
           </button>
@@ -183,7 +196,7 @@ export function NewcomerGuide({
               <ArrowRight size={16} />
             </button>
           )}
-        </div>
+        </ModalFooter>
       </div>
     </Modal>
   );

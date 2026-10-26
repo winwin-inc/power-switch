@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   Check,
   Copy,
@@ -12,7 +12,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { api, isDesktop } from "./api";
-import { Modal } from "./components";
+import { Modal, ModalFooter, ModelDefaultsHint } from "./components";
 import {
   defaultNewApiUrl,
   newApi,
@@ -26,7 +26,7 @@ import {
 import {
   agentLabels,
   defaultReasoningLevel,
-  modelContextDefault,
+  defaultContextWindow,
   reasoningOptions,
   type AgentKind,
   type Protocol,
@@ -50,6 +50,7 @@ export function NewApiDialog({
   onPreferenceSaved?: () => Promise<void>;
   savedBaseUrl?: string | null;
 }) {
+  const formId = useId();
   const [baseUrl, setBaseUrl] = useState(savedBaseUrl || defaultNewApiUrl);
   const [connection, setConnection] = useState<NewApiConnection | null>(null);
   const [status, setStatus] = useState<NewApiStatus | null>(null);
@@ -57,10 +58,7 @@ export function NewApiDialog({
   const [agent, setAgent] = useState<AgentKind>("workbuddy");
   const [modelId, setModelId] = useState("");
   const [platformName, setPlatformName] = useState("winwin");
-  const [context, setContext] = useState(
-    String(modelContextDefault(agentProtocol[agent])),
-  );
-  const contextCustomized = useRef(false);
+  const [context, setContext] = useState(String(defaultContextWindow));
   const [tools, setTools] = useState(true);
   const [images, setImages] = useState(true);
   const [reasoning, setReasoning] = useState<string[]>([defaultReasoningLevel]);
@@ -173,8 +171,6 @@ export function NewApiDialog({
       );
   }, [catalog, protocol, modelId]);
   useEffect(() => {
-    if (!contextCustomized.current)
-      setContext(String(modelContextDefault(protocol)));
     setReasoning([defaultReasoningLevel]);
     setReplaceInvalid(false);
     setRestartUncertain(false);
@@ -438,7 +434,7 @@ export function NewApiDialog({
           </button>
         )}
         {connected && catalog && !created && (
-          <form onSubmit={submit} className="new-api-form">
+          <form id={formId} onSubmit={submit} className="new-api-form">
             <div className="new-api-step-heading">
               <span className="new-api-step-number">02</span>
               <div>
@@ -518,6 +514,7 @@ export function NewApiDialog({
                 </code>
               </div>
             </div>
+            <ModelDefaultsHint />
             <details
               className="advanced"
               open={agent === "codex" ? true : undefined}
@@ -542,7 +539,6 @@ export function NewApiDialog({
                     disabled={Boolean(busy)}
                     onWheel={blurNumberOnWheel}
                     onChange={(e) => {
-                      contextCustomized.current = true;
                       setContext(e.target.value);
                     }}
                     placeholder="按实际模型能力填写"
@@ -605,11 +601,13 @@ export function NewApiDialog({
                 我已核对 New API 令牌列表，允许新建一把密钥
               </label>
             )}
-            <div className="modal-footer">
+            <ModalFooter>
               <span className="field-hint">
                 测试通过后保存，再预览并应用到 Agent。
               </span>
               <button
+                type="submit"
+                form={formId}
                 className="button primary"
                 disabled={Boolean(busy) || !modelId || !platformName.trim()}
               >
@@ -624,7 +622,7 @@ export function NewApiDialog({
                     ? "重新检查并继续"
                     : "创建并添加"}
               </button>
-            </div>
+            </ModalFooter>
           </form>
         )}
         {created && (
@@ -691,7 +689,7 @@ export function NewApiDialog({
                 {testMessage}
               </p>
             )}
-            <div className="modal-footer">
+            <ModalFooter>
               <button
                 className="button secondary"
                 disabled={Boolean(busy)}
@@ -711,7 +709,7 @@ export function NewApiDialog({
                 返回模型库
                 <Check size={16} />
               </button>
-            </div>
+            </ModalFooter>
           </section>
         )}
         {error && (

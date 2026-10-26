@@ -1,4 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { createPortal } from "react-dom";
+import { createContext, useContext, useId } from "react";
 import {
   useEffect,
   useRef,
@@ -23,11 +25,13 @@ import {
   ShieldCheck,
   FlaskConical,
   LoaderCircle,
+  CircleAlert,
+  CircleCheck,
 } from "lucide-react";
 import {
   agentLabels,
   defaultClaude1m,
-  modelContextDefault,
+  defaultContextWindow,
   nativeAgent,
   protocolLabels,
   reasoningOptions,
@@ -41,6 +45,29 @@ import {
   type ModelTestResult,
   type ModelTestState,
 } from "./types";
+import "./modal-layout.css";
+
+const ModalFooterContext = createContext<{ host: HTMLElement | null } | null>(
+  null,
+);
+
+/** Render dialog actions in the fixed footer while keeping their React ownership. */
+export function ModalFooter({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const context = useContext(ModalFooterContext);
+  if (context?.host)
+    return createPortal(
+      <div className={`modal-footer ${className}`}>{children}</div>,
+      context.host,
+    );
+  if (context) return null;
+  return <div className={`modal-footer ${className}`}>{children}</div>;
+}
 
 /** Provide a focus-trapped, keyboard-accessible modal with a consistent closing affordance. */
 export function Modal({
@@ -60,6 +87,18 @@ export function Modal({
   busy?: boolean;
   className?: string;
 }) {
+  const [footerHost, setFooterHost] = useState<HTMLDivElement | null>(null);
+  const opener = useRef<HTMLElement | null>(
+    typeof document !== "undefined" &&
+      document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+  /** Restore focus to the connected control that opened this dialog. */
+  function restoreOpenerFocus(event: Event) {
+    event.preventDefault();
+    if (opener.current?.isConnected) opener.current.focus();
+  }
   return (
     <Dialog.Root
       open
@@ -72,6 +111,7 @@ export function Modal({
         <Dialog.Content
           className={`modal ${wide ? "modal-wide" : ""} ${className}`}
           onInteractOutside={(e) => e.preventDefault()}
+          onCloseAutoFocus={restoreOpenerFocus}
         >
           <div className="modal-heading">
             <div>
@@ -87,7 +127,10 @@ export function Modal({
               <X size={20} />
             </button>
           </div>
-          <div className="modal-body">{children}</div>
+          <ModalFooterContext.Provider value={{ host: footerHost }}>
+            <div className="modal-body">{children}</div>
+            <div className="modal-footer-slot" ref={setFooterHost} />
+          </ModalFooterContext.Provider>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -164,6 +207,11 @@ export function ModelTestFeedback({
       className={"model-test-feedback " + probe.status + " " + className}
       role={probe.status === "failed" ? "alert" : "status"}
     >
+      {probe.status === "passed" ? (
+        <CircleCheck size={16} aria-hidden="true" />
+      ) : probe.status === "failed" ? (
+        <CircleAlert size={16} aria-hidden="true" />
+      ) : null}
       <span>{probe.message}</span>
       <button
         type="button"
@@ -209,6 +257,7 @@ export function ModelForm({
   onCancel: () => void;
   busy: boolean;
 }) {
+  const formId = useId();
   const [model, setModel] = useState(initial);
   const generatedNamePrefix = useRef<string | null>(
     initial.id &&
@@ -225,10 +274,6 @@ export function ModelForm({
   const [testing, setTesting] = useState(false);
   const editing = !!initial.id;
   const namedModel = editing || copy;
-  const contextCustomized = useRef(
-    namedModel ||
-      initial.contextWindow !== modelContextDefault(initial.protocol),
-  );
   const [catalog, setCatalog] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState("");
@@ -299,9 +344,8 @@ export function ModelForm({
         setCatalogLoading(false);
     }
   }
-  /** 更新草稿字段，切换协议时仅调整未经自定义的新建模型上下文。 */
+  /** 更新草稿字段并使旧测试失效，保留用户设置的模型能力。 */
   function update<K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) {
-    if (key === "contextWindow") contextCustomized.current = true;
     if (key === "name") generatedNamePrefix.current = null;
     if (["protocol", "baseUrl", "apiKey"].includes(key)) {
       catalogVersion.current += 1;
@@ -326,9 +370,6 @@ export function ModelForm({
           ? { modelId: "" }
           : {}),
       };
-      if (key === "protocol" && !contextCustomized.current) {
-        next.contextWindow = modelContextDefault(value as Protocol);
-      }
       if (key === "modelId" && generatedNamePrefix.current !== null) {
         next.name = value
           ? `${generatedNamePrefix.current} · ${String(value)}`
@@ -404,7 +445,7 @@ export function ModelForm({
     onSave(draft, probe.result);
   }
   return (
-    <form ref={form} onSubmit={submit} className="model-form">
+    <form id={formId} ref={form} onSubmit={submit} className="model-form">
       <div className="form-grid">
         <label className="field">
           {namedModel ? "名称" : "平台名称"}
@@ -530,6 +571,7 @@ export function ModelForm({
             </span>
           )}
       </div>
+      <ModelDefaultsHint />
       <details
         className="advanced"
         open={model.protocol === "openai-responses" ? true : undefined}
@@ -572,7 +614,7 @@ export function ModelForm({
                   e.target.value ? Number(e.target.value) : null,
                 )
               }
-              placeholder="例如 128000"
+              placeholder={String(defaultContextWindow)}
             />
             <span className="field-hint">
               应用到 Codex 时必须填写实际上下文窗口。
@@ -615,7 +657,7 @@ export function ModelForm({
             : "请先测试当前配置，通过后才能保存。测试将发送文本 test。"}
         </p>
       )}
-      <div className="modal-footer">
+      <ModalFooter>
         <button
           type="button"
           className="button secondary"
@@ -638,6 +680,8 @@ export function ModelForm({
           {testing ? "测试中…" : "测试模型"}
         </button>
         <button
+          type="submit"
+          form={formId}
           className="button primary"
           disabled={busy || !canSave}
           title={
@@ -647,8 +691,18 @@ export function ModelForm({
           {busy ? "保存中…" : "保存模型"}
           <Check size={16} />
         </button>
-      </div>
+      </ModalFooter>
     </form>
+  );
+}
+
+/** 在折叠的能力设置外解释推荐值，帮助不了解参数的用户保留默认配置。 */
+export function ModelDefaultsHint() {
+  return (
+    <p className="model-defaults-hint">
+      如果你不了解这些参数，建议保留推荐默认配置：上下文 {defaultContextWindow}{" "}
+      Token，思考强度为高。
+    </p>
   );
 }
 
@@ -756,7 +810,7 @@ export function AgentPicker({
         <ShieldCheck size={18} />
         <span>下一步查看变更。二次确认后，才会备份并写入配置。</span>
       </div>
-      <div className="modal-footer">
+      <ModalFooter>
         <button
           className="button primary"
           disabled={busy || !selected.length}
@@ -771,7 +825,7 @@ export function AgentPicker({
           {busy ? "读取配置…" : "预览变更"}
           <ArrowRight size={16} />
         </button>
-      </div>
+      </ModalFooter>
     </>
   );
 }
@@ -816,7 +870,7 @@ export function ApplyReview({
           </p>
         ))}
       </div>
-      <div className="modal-footer">
+      <ModalFooter>
         <button className="button secondary" disabled={busy} onClick={onCancel}>
           取消
         </button>
@@ -824,7 +878,7 @@ export function ApplyReview({
           {busy ? "正在写入…" : "确认覆盖应用"}
           <Check size={16} />
         </button>
-      </div>
+      </ModalFooter>
     </div>
   );
 }

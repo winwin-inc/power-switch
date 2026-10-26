@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
@@ -11,10 +12,10 @@ import {
   Cable,
   Check,
   CheckCircle2,
+  CircleAlert,
   CircleHelp,
   Copy,
   Download,
-  ExternalLink,
   FileClock,
   Info,
   FlaskConical,
@@ -32,8 +33,6 @@ import {
   Search,
   Settings2,
   ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
   Sun,
   Trash2,
   X,
@@ -49,6 +48,7 @@ import {
 } from "./updater";
 import { pickLocalPath } from "./file-picker";
 import { AboutPage } from "./AboutPage";
+import { Brand } from "./Brand";
 import { SkillsPage } from "./SkillsPage";
 import { McpPage } from "./McpPage";
 import { NewApiDialog } from "./NewApiDialog";
@@ -61,10 +61,12 @@ import {
   AgentPicker,
   ApplyReview,
   Modal,
+  ModalFooter,
   ModelForm,
   ModelTestFeedback,
   ProtocolMark,
 } from "./components";
+import { MoreActions, PageHeader } from "./ui";
 import {
   agentLabels,
   formatTime,
@@ -109,6 +111,7 @@ type Notice = { kind: "success" | "error"; text: string } | null;
 /** Coordinate desktop state and the explicitly confirmed model/apply/import workflows. */
 export default function App() {
   const [data, setData] = useState<AppData | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [themePreview, setThemePreview] = useState<Settings["theme"] | null>(
     null,
   );
@@ -157,6 +160,15 @@ export default function App() {
   const refresh = useCallback(async () => {
     setData(await api.data());
   }, []);
+  /** 首次读取失败时保留可重试错误状态，重试期间重新显示加载状态。 */
+  const loadLibrary = useCallback(async () => {
+    setLoadError("");
+    try {
+      await refresh();
+    } catch (error) {
+      setLoadError(String(error));
+    }
+  }, [refresh]);
   /** Ignore older checks when a manual retry or saved channel change starts a newer one. */
   const requestUpdateCheck = useCallback(
     (manual = false) => {
@@ -183,8 +195,8 @@ export default function App() {
     [setNotice],
   );
   useEffect(() => {
-    void refresh().catch((e) => setNotice({ kind: "error", text: String(e) }));
-  }, [refresh, setNotice]);
+    void loadLibrary();
+  }, [loadLibrary]);
   useEffect(() => {
     if (!isDesktop || !data || isStoreBuild) return;
     if (updateInstallation.current) return;
@@ -279,7 +291,7 @@ export default function App() {
       setBusy(false);
     }
   }
-  /** Start installing only after the user confirms the available release. */
+  /** 确认后才开始安装；安装失败以明确通知反馈，保留关于页的错误和重试入口。 */
   function beginUpdateInstall() {
     if (updateState.kind !== "available") return;
     const version = updateState.version;
@@ -294,11 +306,8 @@ export default function App() {
       .catch((error) => {
         updateInstallation.current = false;
         setUpdateState({ kind: "error", message: String(error) });
+        setNotice({ kind: "error", text: String(error) });
       });
-  }
-  /** Retry the automatic update check from its compact version-row error icon. */
-  function retryUpdateCheck() {
-    requestUpdateCheck(true);
   }
   /** Discard staged native contents when the user cancels either kind of preview. */
   function closeModal() {
@@ -383,27 +392,23 @@ export default function App() {
     skills: "技能",
     mcp: "MCP 连接器",
   };
+  const descriptions: Record<Page, string> = {
+    models: "管理模型连接，为不同 Agent 选择合适的模型。",
+    backups: "查看配置变更，在需要时恢复到之前的版本。",
+    settings: "管理应用外观、配置位置和本地数据。",
+    about: "查看应用版本、更新设置和项目信息。",
+    skills: "管理 Agent 可使用的本地技能。",
+    mcp: "管理远程工具连接，预览后应用到 Agent。",
+  };
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setPage("models");
-          }}
-        >
-          <img src="/icon.png" alt="power-switch 图标" />
-          <span>
-            power<span className="brand-dash">-</span>switch
-            <small>YOUR MODELS. YOUR CHOICE.</small>
-          </span>
-        </a>
+        <Brand onNavigate={() => setPage("models")} />
         <nav aria-label="主导航">
           <button
             className={page === "models" ? "nav-item active" : "nav-item"}
+            aria-current={page === "models" ? "page" : undefined}
             onClick={() => setPage("models")}
           >
             <Layers3 size={19} />
@@ -411,217 +416,195 @@ export default function App() {
           </button>
           <button
             className={page === "backups" ? "nav-item active" : "nav-item"}
+            aria-current={page === "backups" ? "page" : undefined}
             onClick={() => setPage("backups")}
           >
             <FileClock size={19} />
             模型配置备份
           </button>
-          <button className="nav-item" disabled title="待开放">
-            <BookOpen size={19} />
-            SKILL 技能<span className="nav-pending">待开放</span>
-          </button>
           <button
             className={page === "mcp" ? "nav-item active" : "nav-item"}
+            aria-current={page === "mcp" ? "page" : undefined}
             onClick={() => setPage("mcp")}
           >
             <Cable size={19} />
             MCP 连接器
           </button>
-          <button
-            className={page === "settings" ? "nav-item active" : "nav-item"}
-            onClick={() => setPage("settings")}
-          >
-            <Settings2 size={19} />
-            设置
-          </button>
-          <button
-            className={page === "about" ? "nav-item active" : "nav-item"}
-            onClick={() => setPage("about")}
-          >
-            <Info size={19} />
-            关于
+          <button className="nav-item" disabled title="待开放">
+            <BookOpen size={19} />
+            SKILL 技能<span className="nav-pending">待开放</span>
           </button>
         </nav>
         <div className="sidebar-bottom">
-          <div className="privacy-box">
-            <span className="privacy-icon">
-              <ShieldCheck size={20} />
-            </span>
-            <strong>只在你的设备上</strong>
-            <p>
-              模型与密钥保存在本机
-              <br />
-              每次写入，自动备份
-            </p>
-          </div>
-          <div className="version">
-            <span className="status-dot" />
-            <span>power-switch</span>
-            <span className="version-meta">
-              <span className="version-number">v{packageJson.version}</span>
-              {isDesktop && updateState.kind === "available" && (
-                <button
-                  className="version-update-trigger"
-                  type="button"
-                  aria-label={`发现新版本 v${updateState.version}，查看更新`}
-                  title={`可以升级到 v${updateState.version}`}
-                  onClick={() =>
-                    setModal({
-                      kind: "update-confirm",
-                      version: updateState.version,
-                    })
-                  }
-                >
-                  <Download size={12} aria-hidden="true" />
-                </button>
-              )}
-              {isDesktop && updateState.kind === "checking" && (
-                <span
-                  className="version-update-status"
-                  role="status"
-                  aria-label="正在检查更新"
-                >
-                  <LoaderCircle size={13} className="spin" />
-                </span>
-              )}
-              {isDesktop && updateState.kind === "installing" && (
-                <span
-                  className="version-update-status"
-                  role="status"
-                  aria-label={
-                    updateState.percentage === null
-                      ? "正在下载更新"
-                      : `正在下载更新 ${updateState.percentage}%`
-                  }
-                >
-                  <LoaderCircle size={13} className="spin" />
-                  {updateState.percentage !== null && (
-                    <span className="version-update-progress">
-                      {updateState.percentage}%
+          <nav className="sidebar-utilities" aria-label="应用与帮助">
+            <button
+              className={page === "settings" ? "nav-item active" : "nav-item"}
+              aria-current={page === "settings" ? "page" : undefined}
+              onClick={() => setPage("settings")}
+            >
+              <Settings2 size={19} />
+              设置
+            </button>
+            <button
+              className={page === "about" ? "nav-item active" : "nav-item"}
+              aria-current={page === "about" ? "page" : undefined}
+              onClick={() => setPage("about")}
+            >
+              <Info size={19} />
+              关于
+            </button>
+            <button
+              className="nav-item"
+              type="button"
+              onClick={() => setModal({ kind: "guide" })}
+            >
+              <CircleHelp size={19} /> 新手指引
+            </button>
+          </nav>
+          <div className="sidebar-status">
+            <div className="sidebar-status-row">
+              <div className="privacy-box">
+                <ShieldCheck size={14} aria-hidden="true" />
+                <span>本机存储</span>
+              </div>
+              <div className="version">
+                <span className="version-meta">
+                  <span className="version-number">v{packageJson.version}</span>
+                  {isDesktop && updateState.kind === "available" && (
+                    <button
+                      className="version-update-trigger"
+                      type="button"
+                      aria-label={`发现新版本 v${updateState.version}，查看更新`}
+                      title={`可以升级到 v${updateState.version}`}
+                      onClick={() =>
+                        setModal({
+                          kind: "update-confirm",
+                          version: updateState.version,
+                        })
+                      }
+                    >
+                      <Download size={12} aria-hidden="true" />
+                    </button>
+                  )}
+                  {isDesktop && updateState.kind === "checking" && (
+                    <span
+                      className="version-update-status"
+                      role="status"
+                      aria-label="正在检查更新"
+                    >
+                      <LoaderCircle size={13} className="spin" />
                     </span>
                   )}
+                  {isDesktop && updateState.kind === "installing" && (
+                    <span
+                      className="version-update-status"
+                      role="status"
+                      aria-label={
+                        updateState.percentage === null
+                          ? "正在下载更新"
+                          : `正在下载更新 ${updateState.percentage}%`
+                      }
+                    >
+                      <LoaderCircle size={13} className="spin" />
+                      {updateState.percentage !== null && (
+                        <span className="version-update-progress">
+                          {updateState.percentage}%
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {isDesktop && updateState.kind === "ready" && (
+                    <button
+                      className="version-update-trigger"
+                      type="button"
+                      aria-label="更新完成，重启应用"
+                      title="更新完成，点击重启应用"
+                      onClick={() =>
+                        void restartUpdatedApp().catch((error) => {
+                          updateInstallation.current = false;
+                          setUpdateState({
+                            kind: "error",
+                            message: String(error),
+                          });
+                          setNotice({ kind: "error", text: String(error) });
+                        })
+                      }
+                    >
+                      <RotateCw size={12} aria-hidden="true" />
+                    </button>
+                  )}
                 </span>
-              )}
-              {isDesktop && updateState.kind === "ready" && (
-                <button
-                  className="version-update-trigger"
-                  type="button"
-                  aria-label="更新完成，重启应用"
-                  title="更新完成，点击重启应用"
-                  onClick={() =>
-                    void restartUpdatedApp().catch((error) =>
-                      setUpdateState({ kind: "error", message: String(error) }),
-                    )
-                  }
-                >
-                  <RotateCw size={12} aria-hidden="true" />
-                </button>
-              )}
-              {isDesktop && updateState.kind === "error" && (
-                <button
-                  className="version-update-retry"
-                  type="button"
-                  aria-label="更新检查失败，点击重试"
-                  title={updateState.message}
-                  onClick={retryUpdateCheck}
-                >
-                  <RotateCw size={12} aria-hidden="true" />
-                </button>
-              )}
-            </span>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
       <main className="main">
-        <div className="topbar">
-          <span>{titles[page]}</span>
-          <div className="topbar-actions">
-            {!isDesktop && (
-              <span className="environment demo">
-                <span className="status-dot" />
-                浏览器演示 · 不写入文件
-              </span>
-            )}
-            <button
-              className="topbar-guide"
-              type="button"
-              onClick={() => setModal({ kind: "guide" })}
-            >
-              <CircleHelp size={15} /> 新手指引
-            </button>
-          </div>
-        </div>
         <div className="page-content">
-          <header className="page-header">
-            <h1>{titles[page]}</h1>
-            {page === "models" && (
-              <div className="header-actions">
-                <button
-                  className="button secondary"
-                  disabled={busy}
-                  onClick={() => setModal({ kind: "import" })}
-                >
-                  <Link2 size={16} />
-                  导入链接
-                </button>
-                <button
-                  className="button new-api-action"
-                  disabled={busy}
-                  onClick={() => setModal({ kind: "new-api" })}
-                >
-                  <Download size={16} />从 New API 添加
-                </button>
-                <button
-                  className="button primary"
-                  disabled={busy}
-                  onClick={() => setModal({ kind: "model", model: newModel() })}
-                >
-                  <Plus size={18} />
-                  添加模型
-                </button>
-              </div>
-            )}
-          </header>
+          {!isDesktop && (
+            <div className="environment demo demo-banner">
+              <span className="status-dot" /> 浏览器演示 · 不写入文件
+            </div>
+          )}
+          {(page !== "mcp" || !data) && (
+            <PageHeader
+              title={titles[page]}
+              description={descriptions[page]}
+              actions={
+                page === "models" ? (
+                  <>
+                    <button
+                      className="button ghost"
+                      disabled={busy}
+                      onClick={() => setModal({ kind: "import" })}
+                    >
+                      <Link2 size={16} /> 导入链接
+                    </button>
+                    <button
+                      className="button new-api-add"
+                      disabled={busy}
+                      onClick={() => setModal({ kind: "new-api" })}
+                    >
+                      <Download size={16} /> 从 New API 添加
+                    </button>
+                    <button
+                      className="button primary"
+                      disabled={busy}
+                      onClick={() =>
+                        setModal({ kind: "model", model: newModel() })
+                      }
+                    >
+                      <Plus size={18} /> 添加模型
+                    </button>
+                  </>
+                ) : undefined
+              }
+            />
+          )}
           {!data ? (
-            <div className="empty-state">
-              <LoaderCircle className="spin" />
-              <h2>正在打开模型库</h2>
-              <button
-                className="button secondary"
-                onClick={() => void run(refresh)}
-              >
-                重新加载
-              </button>
+            <div className="empty-state" role={loadError ? "alert" : "status"}>
+              {loadError ? (
+                <CircleAlert size={28} />
+              ) : (
+                <LoaderCircle className="spin" aria-hidden="true" />
+              )}
+              <h2>{loadError ? "无法打开模型库" : "正在打开模型库"}</h2>
+              {loadError && (
+                <>
+                  <p>{loadError}</p>
+                  <button
+                    className="button secondary"
+                    onClick={() => void loadLibrary()}
+                  >
+                    <RotateCw size={16} /> 重新加载
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <>
               {page === "models" && (
                 <>
-                  <section className="intro-strip">
-                    <div className="intro-copy">
-                      <span className="intro-symbol">
-                        <SlidersHorizontal size={23} />
-                      </span>
-                      <div>
-                        <strong>一次整理，自由切换</strong>
-                        <p>统一管理连接配置，为你的 Agent 选择下一位搭档。</p>
-                      </div>
-                    </div>
-                    <div className="agent-chips">
-                      <span>
-                        <span className="mini-dot blue" />
-                        WorkBuddy
-                      </span>
-                      <span>
-                        <span className="mini-dot orange" />
-                        Claude Code
-                      </span>
-                      <span>
-                        <span className="mini-dot graphite" />
-                        Codex
-                      </span>
-                    </div>
-                  </section>
                   <div className="collection-tools">
                     <div className="filter-tabs" aria-label="按 Agent 筛选">
                       {[
@@ -633,6 +616,7 @@ export default function App() {
                         <button
                           key={value}
                           className={filter === value ? "selected" : ""}
+                          aria-pressed={filter === value}
                           onClick={() => setFilter(value)}
                         >
                           {label}
@@ -661,17 +645,13 @@ export default function App() {
                   </div>
                   {visible.length ? (
                     <div className="model-list">
-                      {visible.map((model, index) => {
+                      {visible.map((model) => {
                         const probe =
                           modelTests[model.id]?.key === modelTestKey(model)
                             ? modelTests[model.id]
                             : undefined;
                         return (
-                          <article
-                            className="model-card"
-                            key={model.id}
-                            style={{ animationDelay: `${index * 45}ms` }}
-                          >
+                          <article className="model-card" key={model.id}>
                             <div className="card-main">
                               <ProtocolMark
                                 protocol={model.protocol}
@@ -684,7 +664,7 @@ export default function App() {
                                     probe?.status === "failed") && (
                                     <span
                                       className={
-                                        "model-test-dot " + probe.status
+                                        "model-test-status " + probe.status
                                       }
                                       role="img"
                                       aria-label={
@@ -693,12 +673,32 @@ export default function App() {
                                           : "模型测试未通过"
                                       }
                                       title={probe.message}
-                                    />
+                                    >
+                                      {probe.status === "passed" ? (
+                                        <CheckCircle2
+                                          size={14}
+                                          aria-hidden="true"
+                                        />
+                                      ) : (
+                                        <CircleAlert
+                                          size={14}
+                                          aria-hidden="true"
+                                        />
+                                      )}
+                                      {probe.status === "passed"
+                                        ? "测试通过"
+                                        : "测试失败"}
+                                    </span>
                                   )}
                                 </h2>
-                                <span className="model-id">
-                                  {model.modelId}
-                                </span>
+                                <div className="model-meta">
+                                  <span className="model-agent">
+                                    {agentLabels[nativeAgent[model.protocol]]}
+                                  </span>
+                                  <span className="model-id">
+                                    {model.modelId}
+                                  </span>
+                                </div>
                               </div>
                               <span
                                 className={`tag protocol-tag ${model.protocol}`}
@@ -714,7 +714,6 @@ export default function App() {
                                   title={model.baseUrl}
                                 >
                                   {model.baseUrl}
-                                  <ExternalLink size={12} />
                                 </span>
                               </div>
                               <div className="credential">
@@ -723,12 +722,6 @@ export default function App() {
                                   className={!model.apiKey ? "missing-key" : ""}
                                 >
                                   {model.apiKey ? "••••••••••••" : "未设置"}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="detail-label">适用 AGENT</span>
-                                <span>
-                                  {agentLabels[nativeAgent[model.protocol]]}
                                 </span>
                               </div>
                             </div>
@@ -750,9 +743,8 @@ export default function App() {
                               </div>
                               <div className="card-actions">
                                 <button
-                                  className="icon-button"
-                                  aria-label={`编辑 ${model.name}`}
-                                  title="编辑"
+                                  className="button ghost"
+                                  aria-label={"编辑 " + model.name}
                                   disabled={busy}
                                   onClick={() =>
                                     setModal({
@@ -761,73 +753,68 @@ export default function App() {
                                     })
                                   }
                                 >
-                                  <Pencil size={15} />
+                                  <Pencil size={16} /> 编辑
                                 </button>
                                 <button
-                                  className="icon-button"
-                                  aria-label={`复制 ${model.name}`}
-                                  title="复制模型"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    setModal({
-                                      kind: "model",
-                                      copy: true,
-                                      model: {
-                                        ...structuredClone(model),
-                                        id: "",
-                                        name: `${model.name} · 副本`,
-                                      },
-                                    })
-                                  }
-                                >
-                                  <Copy size={15} />
-                                </button>
-                                <button
-                                  className="icon-button"
+                                  className="button secondary"
                                   aria-label={"测试模型 " + model.name}
-                                  title="测试模型"
                                   disabled={busy || probe?.status === "testing"}
                                   onClick={() => void testLibraryModel(model)}
                                 >
                                   {probe?.status === "testing" ? (
-                                    <LoaderCircle size={15} className="spin" />
+                                    <LoaderCircle size={16} className="spin" />
                                   ) : (
-                                    <FlaskConical size={15} />
+                                    <FlaskConical size={16} />
                                   )}
+                                  {probe?.status === "testing"
+                                    ? "测试中"
+                                    : "测试模型"}
                                 </button>
                                 <button
-                                  className="icon-button"
-                                  aria-label={`分享 ${model.name}`}
-                                  title="分享链接"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    setModal({ kind: "share", model })
-                                  }
-                                >
-                                  <Link2 size={15} />
-                                </button>
-                                <button
-                                  className="icon-button delete-button"
-                                  aria-label={`删除 ${model.name}`}
-                                  title="删除"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    setModal({ kind: "delete", model })
-                                  }
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                                <span className="action-divider" />
-                                <button
-                                  className="apply-button"
+                                  className="button primary"
                                   disabled={busy}
                                   onClick={() =>
                                     setModal({ kind: "agents", model })
                                   }
                                 >
-                                  应用到 Agent
-                                  <ArrowRight size={15} />
+                                  应用到 Agent <ArrowRight size={16} />
                                 </button>
+                                <MoreActions
+                                  label={"更多操作 " + model.name}
+                                  disabled={busy}
+                                  actions={[
+                                    {
+                                      label: "复制模型",
+                                      accessibleLabel: "复制 " + model.name,
+                                      icon: <Copy size={16} />,
+                                      onSelect: () =>
+                                        setModal({
+                                          kind: "model",
+                                          copy: true,
+                                          model: {
+                                            ...structuredClone(model),
+                                            id: "",
+                                            name: model.name + " · 副本",
+                                          },
+                                        }),
+                                    },
+                                    {
+                                      label: "分享链接",
+                                      accessibleLabel: "分享 " + model.name,
+                                      icon: <Link2 size={16} />,
+                                      onSelect: () =>
+                                        setModal({ kind: "share", model }),
+                                    },
+                                    {
+                                      label: "删除模型",
+                                      accessibleLabel: "删除 " + model.name,
+                                      icon: <Trash2 size={16} />,
+                                      danger: true,
+                                      onSelect: () =>
+                                        setModal({ kind: "delete", model }),
+                                    },
+                                  ]}
+                                />
                               </div>
                             </div>
                             {probe && (
@@ -868,7 +855,17 @@ export default function App() {
                           ? "试试其他关键词或筛选条件。"
                           : "添加 API 地址和模型 ID，让不同 Agent 连接你的模型。"}
                       </p>
-                      {!data.models.length && (
+                      {query || filter !== "all" ? (
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            setQuery("");
+                            setFilter("all");
+                          }}
+                        >
+                          清除筛选
+                        </button>
+                      ) : (
                         <button
                           className="button primary"
                           onClick={() =>
@@ -1010,6 +1007,7 @@ export default function App() {
               {page === "settings" && (
                 <SettingsPage
                   data={data}
+                  theme={theme}
                   busy={busy}
                   onInitialize={(options) => {
                     setInitializationError("");
@@ -1067,12 +1065,6 @@ export default function App() {
               )}
             </>
           )}
-          <footer className="page-bottom">
-            <span>小小开关，更多可能。</span>
-            <span>
-              POWER YOUR WORKFLOW <Sparkles size={12} />
-            </span>
-          </footer>
         </div>
       </main>
       {notice && (
@@ -1119,14 +1111,14 @@ export default function App() {
           onClose={closeModal}
           className="update-confirm-modal"
         >
-          <div className="modal-footer">
+          <ModalFooter>
             <button className="button secondary" onClick={closeModal}>
               暂不更新
             </button>
             <button className="button primary" onClick={beginUpdateInstall}>
               确认更新
             </button>
-          </div>
+          </ModalFooter>
         </Modal>
       )}
       {modal?.kind === "model" && (
@@ -1274,11 +1266,11 @@ export default function App() {
               第 {failure.index + 1} 项未保存：{failure.message}
             </p>
           ))}
-          <div className="modal-footer">
+          <ModalFooter>
             <button className="button primary" onClick={closeModal}>
               完成
             </button>
-          </div>
+          </ModalFooter>
         </Modal>
       )}
       {modal?.kind === "share" && (
@@ -1333,7 +1325,7 @@ export default function App() {
             {formatTime(modal.backup.createdAt)} · {modal.backup.paths.length}{" "}
             个文件
           </p>
-          <div className="modal-footer">
+          <ModalFooter>
             <button
               className="button secondary"
               disabled={busy}
@@ -1353,7 +1345,7 @@ export default function App() {
             >
               确认删除备份
             </button>
-          </div>
+          </ModalFooter>
         </Modal>
       )}
       {modal?.kind === "delete-all-backups" && (
@@ -1370,7 +1362,7 @@ export default function App() {
               配置。
             </div>
           </div>
-          <div className="modal-footer">
+          <ModalFooter>
             <button
               className="button secondary"
               disabled={busy}
@@ -1396,7 +1388,7 @@ export default function App() {
             >
               确认清空备份
             </button>
-          </div>
+          </ModalFooter>
         </Modal>
       )}
       {modal?.kind === "delete" && (
@@ -1410,7 +1402,7 @@ export default function App() {
             <CircleHelp size={18} />
             <span>已应用的 Agent 配置保留，可通过模型配置备份恢复。</span>
           </div>
-          <div className="modal-footer">
+          <ModalFooter>
             <button
               className="button secondary"
               disabled={busy}
@@ -1431,7 +1423,7 @@ export default function App() {
               确认删除
               <Trash2 size={16} />
             </button>
-          </div>
+          </ModalFooter>
         </Modal>
       )}
     </div>
@@ -1447,8 +1439,10 @@ function ImportLinkForm({
   onPreview: (link: string) => void;
 }) {
   const [link, setLink] = useState("");
+  const formId = useId();
   return (
     <form
+      id={formId}
       onSubmit={(e) => {
         e.preventDefault();
         onPreview(link);
@@ -1471,12 +1465,17 @@ function ImportLinkForm({
         <Link2 size={18} />
         <span>支持单个或批量模型。链接中的 API Key 在预览中保持隐藏。</span>
       </div>
-      <div className="modal-footer">
-        <button className="button primary" disabled={busy || !link.trim()}>
+      <ModalFooter>
+        <button
+          type="submit"
+          form={formId}
+          className="button primary"
+          disabled={busy || !link.trim()}
+        >
           {busy ? "正在解析…" : "预览导入"}
           <ArrowRight size={16} />
         </button>
-      </div>
+      </ModalFooter>
     </form>
   );
 }
@@ -1527,7 +1526,7 @@ function ImportReview({
           </div>
         ))}
       </div>
-      <div className="modal-footer">
+      <ModalFooter>
         <button
           className="button primary"
           disabled={busy}
@@ -1536,7 +1535,7 @@ function ImportReview({
           确认导入
           <Download size={16} />
         </button>
-      </div>
+      </ModalFooter>
     </>
   );
 }
@@ -1595,7 +1594,7 @@ function ShareModel({ model }: { model: ModelConfig }) {
           {error}
         </p>
       )}
-      <div className="modal-footer">
+      <ModalFooter>
         <button
           className="button primary"
           disabled={!link}
@@ -1604,20 +1603,22 @@ function ShareModel({ model }: { model: ModelConfig }) {
           {copied ? <Check size={16} /> : <Copy size={16} />}{" "}
           {copied ? "已复制" : "复制链接"}
         </button>
-      </div>
+      </ModalFooter>
     </>
   );
 }
 
-/** Edit path overrides while displaying the OS-resolved paths and local storage location. */
+/** 编辑路径草稿；外观始终跟随父级预览或已保存状态，保存失败时可同步回滚。 */
 function SettingsPage({
   data,
+  theme,
   busy,
   onThemeSave,
   onSave,
   onInitialize,
 }: {
   data: AppData;
+  theme: Settings["theme"];
   busy: boolean;
   onThemeSave: (theme: Settings["theme"]) => void;
   onSave: (settings: Settings) => void;
@@ -1655,11 +1656,12 @@ function SettingsPage({
       setPicking(false);
     }
   }
-  /** Save all settings together so path validation is atomic on the backend. */
+  /** 保存路径草稿时携带当前外观，避免使用页面挂载时捕获的旧主题。 */
   function submit(event: FormEvent) {
     event.preventDefault();
     onSave({
       ...settings,
+      theme,
       autoUpdate: data.settings.autoUpdate,
       receiveRc: data.settings.receiveRc,
     });
@@ -1685,18 +1687,17 @@ function SettingsPage({
             <button
               type="button"
               key={value}
-              className={settings.theme === value ? "selected" : ""}
-              aria-pressed={settings.theme === value}
+              className={theme === value ? "selected" : ""}
+              aria-pressed={theme === value}
               disabled={busy}
               onClick={() => {
-                if (settings.theme === value) return;
-                setSettings((old) => ({ ...old, theme: value }));
+                if (theme === value) return;
                 onThemeSave(value);
               }}
             >
               <Icon size={22} />
               {label}
-              {settings.theme === value && <Check size={15} />}
+              {theme === value && <Check size={15} />}
             </button>
           ))}
         </div>
