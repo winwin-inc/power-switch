@@ -46,6 +46,117 @@ beforeEach(() => {
 });
 
 describe("MCP connector page", () => {
+  /** Distinguish an initial load failure from an empty connector library and allow retry. */
+  it("offers retry after the connector list fails to load", async () => {
+    const user = userEvent.setup();
+    vi.mocked(mcpApi.list)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce([]);
+    render(<McpPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "未能读取 MCP 连接器" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("offline");
+    await user.click(screen.getByRole("button", { name: "重试" }));
+    expect(
+      await screen.findByRole("heading", { name: "还没有 MCP 连接器" }),
+    ).toBeInTheDocument();
+    expect(mcpApi.list).toHaveBeenCalledTimes(2);
+  });
+
+  /** Keep the last good connector list visible until an explicit retry succeeds. */
+  it("retains existing connectors and disables refresh retry while loading", async () => {
+    const user = userEvent.setup();
+    const customConnector = { ...connector, id: "custom-1", builtIn: false };
+    let finishRetry!: (rows: McpSummary[]) => void;
+    vi.mocked(mcpApi.list)
+      .mockResolvedValueOnce([customConnector])
+      .mockRejectedValueOnce(new Error("temporary read failure"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRetry = resolve;
+          }),
+      );
+    render(<McpPage />);
+
+    const card = (
+      await screen.findByRole("heading", { name: /^马上赢 X 平台/ })
+    ).closest("article")!;
+    await user.click(
+      within(card).getByRole("button", {
+        name: "删除连接器 马上赢 X 平台",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "删除记录" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "temporary read failure",
+    );
+    expect(
+      screen.getByRole("heading", { name: /^马上赢 X 平台/ }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "重试" }));
+    expect(screen.getByRole("button", { name: "正在重试…" })).toBeDisabled();
+    await act(async () => finishRetry([]));
+
+    expect(
+      screen.queryByRole("button", { name: "重试" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /^马上赢 X 平台/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "还没有 MCP 连接器" }),
+    ).toBeInTheDocument();
+  });
+
+  /** Ignore a slower initial request when a later save-triggered refresh has completed. */
+  it("does not let an old list request overwrite the latest refreshed connectors", async () => {
+    const user = userEvent.setup();
+    const staleConnector = { ...connector, id: "stale", name: "旧请求连接器" };
+    const latestConnector = { ...connector, id: "latest", name: "最新连接器" };
+    let finishInitialList!: (rows: McpSummary[]) => void;
+    let listCalls = 0;
+    vi.mocked(mcpApi.list).mockImplementation(() => {
+      listCalls += 1;
+      if (listCalls === 1) {
+        return new Promise((resolve) => {
+          finishInitialList = resolve;
+        });
+      }
+      return Promise.resolve([latestConnector]);
+    });
+    render(<McpPage />);
+
+    await user.click(screen.getByRole("button", { name: "自定义添加" }));
+    await user.type(screen.getByLabelText("连接器名称"), "新连接器");
+    await user.type(
+      screen.getByPlaceholderText("例如：msy-x-lightdash"),
+      "new-connector",
+    );
+    await user.type(
+      screen.getByLabelText("MCP 地址"),
+      "https://example.com/mcp",
+    );
+    await user.click(screen.getByRole("button", { name: "保存连接器" }));
+
+    expect(listCalls).toBe(2);
+    expect(
+      await screen.findByRole("heading", { name: /^最新连接器/ }),
+    ).toBeInTheDocument();
+    await act(async () => finishInitialList([staleConnector]));
+
+    expect(
+      screen.getByRole("heading", { name: /^最新连接器/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "旧请求连接器" }),
+    ).not.toBeInTheDocument();
+  });
+
   /** Keep the loading indicator and result on the clicked connector, including failures. */
   it.each(["success", "failure"] as const)(
     "shows only the selected connector as testing and resets after %s",

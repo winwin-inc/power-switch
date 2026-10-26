@@ -91,6 +91,41 @@ beforeEach(() => {
 });
 
 describe("New API connector", () => {
+  it.each([
+    ["workbuddy", "openai-chat"],
+    ["claude", "anthropic-messages"],
+    ["codex", "openai-responses"],
+  ])(
+    "submits recommended defaults for %s and explains them outside collapsed settings",
+    async (agent, protocol) => {
+      render(
+        <NewApiDialog
+          onClose={vi.fn()}
+          onAdded={vi.fn().mockResolvedValue(undefined)}
+        />,
+      );
+      await screen.findByRole("option", { name: "chat-model" });
+      await userEvent.selectOptions(screen.getByLabelText("目标客户端"), agent);
+      const hint = screen.getByText(/如果你不了解这些参数/);
+      expect(hint).toBeVisible();
+      expect(hint.closest("details")).toBeNull();
+      if (agent !== "codex")
+        await userEvent.click(screen.getByText("模型能力设置"));
+      expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(524_288);
+      expect(screen.getByRole("radio", { name: "高" })).toBeChecked();
+      await userEvent.click(screen.getByRole("button", { name: "创建并添加" }));
+      await waitFor(() =>
+        expect(newApi.importModel).toHaveBeenCalledWith(
+          expect.objectContaining({
+            protocol,
+            contextWindow: 524_288,
+            reasoningLevels: ["high"],
+          }),
+        ),
+      );
+    },
+  );
+
   it("loads the saved instance address and writes verified URLs only to native settings", async () => {
     const user = userEvent.setup();
     const savedBaseUrl = "https://saved.example.com";
@@ -122,11 +157,18 @@ describe("New API connector", () => {
     expect(screen.getByRole("textbox", { name: "平台名称" })).toHaveValue(
       "winwin",
     );
-    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(1_000_000);
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(524_288);
     expect(
       screen.queryByRole("combobox", { name: "分组" }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "创建并添加" }));
+    const createButton = screen.getByRole("button", { name: "创建并添加" });
+    expect(createButton).toHaveAttribute("type", "submit");
+    expect(createButton).toHaveAttribute(
+      "form",
+      document.querySelector(".new-api-form")?.id,
+    );
+    expect(createButton.closest("form")).toBeNull();
+    await user.click(createButton);
     await screen.findByText("模型测试通过并已保存，尚未应用到 Agent。");
     expect(newApi.importModel).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -136,7 +178,7 @@ describe("New API connector", () => {
         modelId: "auto",
         name: "winwin · auto",
         protocol: "openai-chat",
-        contextWindow: 1_000_000,
+        contextWindow: 524_288,
         reasoningLevels: ["high"],
         replaceInvalid: false,
         restartUncertain: false,
@@ -226,7 +268,7 @@ describe("New API connector", () => {
     );
   });
 
-  it("offers Codex candidates with a smaller context default even when New API labels them openai", async () => {
+  it("offers Codex candidates with the shared context default even when New API labels them openai", async () => {
     render(
       <NewApiDialog
         onClose={vi.fn()}
@@ -239,7 +281,7 @@ describe("New API connector", () => {
     await userEvent.selectOptions(client, "codex");
     expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(524_288);
     await userEvent.selectOptions(client, "claude");
-    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(1_000_000);
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(524_288);
     await userEvent.selectOptions(client, "codex");
     expect(
       screen.getByRole("option", { name: "responses-model" }),

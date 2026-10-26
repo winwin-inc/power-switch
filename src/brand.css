@@ -1,0 +1,237 @@
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 2px 28px;
+  border-radius: 8px;
+  --brand-energy: var(--new-api-text);
+}
+.brand:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 6px;
+}
+.brand-mark {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  isolation: isolate;
+}
+.brand-mark img {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 11px;
+  transform-origin: center 78%;
+}
+.brand-mark::before,
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 1px solid var(--brand-energy);
+  border-radius: 16px;
+  opacity: 0;
+  pointer-events: none;
+}
+.brand-mark::before {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--brand-energy) 22%, transparent),
+    transparent 70%
+  );
+}
+.brand-mark::after {
+  border-color: var(--blue);
+}
+.brand-name {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  font-size: 18px;
+  letter-spacing: -1px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.brand-letter {
+  display: inline-block;
+  transform-origin: center 80%;
+}
+.brand-dash {
+  color: var(--blue);
+}
+.brand-name::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -5px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--brand-energy), var(--blue));
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+.brand-sparks {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.brand-sparks i {
+  position: absolute;
+  width: 3px;
+  height: 7px;
+  background: var(--brand-energy);
+  border-radius: 2px;
+  opacity: 0;
+}
+.brand-sparks i:nth-child(1) {
+  top: 3px;
+  left: 2px;
+  --spark-x: -7px;
+  --spark-y: -10px;
+  --spark-rotation: -35deg;
+}
+.brand-sparks i:nth-child(2) {
+  top: -3px;
+  left: 23px;
+  --spark-x: 1px;
+  --spark-y: -11px;
+  --spark-rotation: 12deg;
+}
+.brand-sparks i:nth-child(3) {
+  top: 8px;
+  right: -1px;
+  --spark-x: 8px;
+  --spark-y: -7px;
+  --spark-rotation: 48deg;
+}
+.brand[data-motion="running"] .brand-mark img {
+  animation: brand-switch-pop var(--brand-motion-duration) ease-out both;
+  will-change: transform;
+}
+.brand[data-motion="running"] .brand-mark::before {
+  animation: brand-charge-ring var(--brand-motion-duration) ease-out both;
+}
+.brand[data-motion="running"] .brand-mark::after {
+  animation: brand-charge-ring calc(var(--brand-motion-duration) - 160ms)
+    ease-out 160ms both;
+}
+.brand[data-motion="running"] .brand-letter {
+  animation: brand-letter-wave 1200ms cubic-bezier(0.22, 0.7, 0.3, 1) both;
+  animation-delay: calc(120ms + var(--letter-index) * 35ms);
+  will-change: transform;
+}
+.brand[data-motion="running"] .brand-name::after {
+  animation: brand-energy-line 1500ms ease-out 160ms both;
+}
+.brand[data-motion="running"] .brand-sparks i {
+  animation: brand-charge-spark 1050ms ease-out 250ms both;
+}
+@keyframes brand-switch-pop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1) rotate(0);
+  }
+  12% {
+    transform: translateY(3px) scale(0.9, 0.94) rotate(-10deg);
+  }
+  29% {
+    transform: translateY(-9px) scale(1.2) rotate(12deg);
+  }
+  43% {
+    transform: translateY(1px) scale(1.04, 0.97) rotate(-7deg);
+  }
+  59% {
+    transform: translateY(-4px) scale(1.1) rotate(4deg);
+  }
+  77% {
+    transform: translateY(0) scale(1) rotate(-1deg);
+  }
+}
+@keyframes brand-letter-wave {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0) scale(1);
+  }
+  13% {
+    transform: translateY(2px) rotate(2deg) scale(0.98);
+  }
+  34% {
+    color: var(--brand-energy);
+    transform: translateY(-6px) rotate(-6deg) scale(1.1);
+  }
+  54% {
+    color: var(--brand-energy);
+    transform: translateY(1px) rotate(4deg) scale(1.02);
+  }
+  74% {
+    transform: translateY(-2px) rotate(-1deg) scale(1);
+  }
+}
+@keyframes brand-charge-ring {
+  0%,
+  12% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  30% {
+    opacity: 0.48;
+  }
+  78%,
+  100% {
+    opacity: 0;
+    transform: scale(1.65);
+  }
+}
+@keyframes brand-charge-spark {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(var(--spark-rotation)) scale(0.5);
+  }
+  24% {
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--spark-x), var(--spark-y))
+      rotate(var(--spark-rotation)) scale(0.7);
+  }
+}
+@keyframes brand-energy-line {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  32% {
+    opacity: 0.7;
+    transform: scaleX(1);
+  }
+  70% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand *,
+  .brand *::before,
+  .brand *::after {
+    animation: none !important;
+    transform: none !important;
+  }
+  .brand:is(:hover, :focus-visible) .brand-mark {
+    border-radius: 11px;
+    box-shadow: 0 0 0 2px var(--new-api-border);
+  }
+  .brand:is(:hover, :focus-visible) .brand-name {
+    color: var(--brand-energy);
+  }
+}

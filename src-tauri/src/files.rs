@@ -288,12 +288,20 @@ pub fn redacted(bytes: Option<&[u8]>) -> String {
     }
 }
 
-/// Hide credential fields at any nesting depth, including unknown provider extensions.
+/// 仅展示已知容量字段的非负整数值，避免把任意 token 字段或凭据字符串放行。
+fn visible_token_capacity(key: &str, value: &serde_json::Value) -> bool {
+    matches!(key, "maxinputtokens" | "modelautocompacttokenlimit") && value.as_u64().is_some()
+}
+
+/// Hide credential fields at any nesting depth while preserving explicit numeric capacity fields.
 fn redact_value(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
             for (key, v) in map.iter_mut() {
                 let k = key.to_ascii_lowercase().replace(['_', '-'], "");
+                if visible_token_capacity(&k, v) {
+                    continue;
+                }
                 if matches!(k.as_str(), "headers" | "httpheaders") && v.is_object() {
                     // Preserve header names so MCP previews show the complete configuration shape.
                     if let Some(headers) = v.as_object_mut() {
@@ -347,6 +355,51 @@ fn redact_value(value: &mut serde_json::Value) {
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    /// JSON 和 TOML 中的明确容量数值可核对，嵌套凭据与请求头仍被完整遮盖。
+    #[test]
+    fn redaction_preserves_explicit_numeric_capacity_fields() {
+        let input = serde_json::json!({
+            "maxInputTokens": 524288,
+            "model_auto_compact_token_limit": 262144,
+            "nested": {"max_input_tokens": 524288, "apiKey": "SECRET-KEY"},
+            "headers": {"maxInputTokens": 524288, "Authorization": "SECRET-AUTH"},
+            "access_token": "SECRET-TOKEN",
+            "url": "https://name:SECRET@safe.example.com/v1?token=SECRET#SECRET"
+        });
+        let output = redacted(Some(&serde_json::to_vec(&input).unwrap()));
+        let visible: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(visible["maxInputTokens"], 524288);
+        assert_eq!(visible["model_auto_compact_token_limit"], 262144);
+        assert_eq!(visible["nested"]["max_input_tokens"], 524288);
+        assert_eq!(visible["headers"]["maxInputTokens"], "••••••••");
+        assert!(!output.contains("SECRET"));
+        let toml = b"model_auto_compact_token_limit = 262144\nexperimental_bearer_token = 'SECRET'";
+        let output = redacted(Some(toml));
+        assert!(output.contains("262144"));
+        assert!(!output.contains("SECRET"));
+    }
+
+    /// 容量字段名只放行整数，字符串、对象、数组及相似凭据键不能绕过脱敏。
+    #[test]
+    fn redaction_does_not_whitelist_non_numeric_or_similar_token_fields() {
+        for value in [
+            serde_json::json!("SECRET"),
+            serde_json::json!("524288"),
+            serde_json::json!({"apiKey": "SECRET"}),
+            serde_json::json!(["SECRET"]),
+            serde_json::json!(-1),
+            serde_json::json!(524288.5),
+        ] {
+            let input = serde_json::json!({"maxInputTokens": value, "maxInputTokensSecret": 123456, "tokenLimit": 524288});
+            let output = redacted(Some(&serde_json::to_vec(&input).unwrap()));
+            let visible: serde_json::Value = serde_json::from_str(&output).unwrap();
+            for key in ["maxInputTokens", "maxInputTokensSecret", "tokenLimit"] {
+                assert_eq!(visible[key], "••••••••");
+            }
+            assert!(!output.contains("SECRET"));
+        }
+    }
 
     /// Preserve the destination when an atomic replacement targets a non-file.
     #[test]

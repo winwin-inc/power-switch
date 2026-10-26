@@ -129,8 +129,7 @@ export const nativeAgent: Record<Protocol, AgentKind> = {
   "openai-responses": "codex",
   "anthropic-messages": "claude",
 };
-export const defaultContextWindow = 1_000_000;
-export const defaultCodexContextWindow = 524_288;
+export const defaultContextWindow = 524_288;
 export const defaultReasoningLevel = "high";
 export const reasoningOptions = [
   { value: "low", label: "低" },
@@ -145,13 +144,6 @@ export function selectedReasoningLevel(levels: string[]): string | undefined {
   return levels.includes(defaultReasoningLevel)
     ? defaultReasoningLevel
     : levels[0];
-}
-
-/** 按协议返回新建模型的上下文默认值，Codex 使用较小的窗口。 */
-export function modelContextDefault(protocol: Protocol): number {
-  return protocol === "openai-responses"
-    ? defaultCodexContextWindow
-    : defaultContextWindow;
 }
 
 /** Default new and existing models to Claude 1M mode except the two exact exclusions. */

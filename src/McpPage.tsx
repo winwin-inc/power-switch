@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type MouseEvent,
@@ -17,7 +18,8 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { ApplyReview, Modal } from "./components";
+import { ApplyReview, Modal, ModalFooter } from "./components";
+import { PageHeader } from "./ui";
 import { isDesktop } from "./api";
 import { pickLocalPath } from "./file-picker";
 import {
@@ -126,9 +128,12 @@ export function McpPage({
   const [projectDir, setProjectDir] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeTest, setActiveTest] = useState<ActiveTest>(null);
+  const [loading, setLoading] = useState(true);
   const testing = activeTest !== null;
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
+  const listRequestRevision = useRef(0);
   const savedToken = connectors.some(
     (connector) => connector.id === draft.id && connector.hasToken,
   );
@@ -140,21 +145,33 @@ export function McpPage({
       ? "申请马上赢内部 LightDash 令牌"
       : "申请马上赢 X 令牌";
 
-  /** Reload only public connector metadata after a native mutation. */
-  const refresh = useCallback(
-    async () => setConnectors(await mcpApi.list()),
-    [],
-  );
-  useEffect(() => {
-    let active = true;
-    void mcpApi
-      .list()
-      .then((rows) => active && setConnectors(rows))
-      .catch((e) => active && setError(String(e)));
-    return () => {
-      active = false;
-    };
+  /** Load connector metadata while retaining the last good list after a failure. */
+  const refresh = useCallback(async () => {
+    const requestRevision = ++listRequestRevision.current;
+    setLoading(true);
+    try {
+      const rows = await mcpApi.list();
+      if (requestRevision !== listRequestRevision.current) return false;
+      setConnectors(rows);
+      setLoadError("");
+      return true;
+    } catch (e) {
+      if (requestRevision === listRequestRevision.current) {
+        setLoadError(String(e));
+      }
+      return false;
+    } finally {
+      if (requestRevision === listRequestRevision.current) {
+        setLoading(false);
+      }
+    }
   }, []);
+  useEffect(() => {
+    void refresh();
+    return () => {
+      listRequestRevision.current += 1;
+    };
+  }, [refresh]);
 
   /** Open a fresh create or edit draft without ever revealing the stored PAT. */
   function openForm(next: McpDraft, builtIn = false) {
@@ -326,33 +343,42 @@ export function McpPage({
 
   return (
     <section className="mcp-page" aria-label="MCP 连接器管理">
-      <div className="mcp-intro">
-        <div>
-          <h2>把远程工具接入你的 Agent</h2>
-          <p>
-            地址和令牌保存在本机。选择 Agent 后，预览并复制为各平台的原生配置。
-          </p>
-        </div>
-        <Cable size={36} aria-hidden="true" />
-      </div>
-      <div className="mcp-actions">
-        <button
-          className="button secondary"
-          onClick={() => openForm(emptyMcpDraft())}
-        >
-          <Plus size={16} />
-          自定义添加
-        </button>
-      </div>
+      <PageHeader
+        title="MCP 连接器"
+        description="管理远程工具连接，预览后应用到 Agent。"
+        actions={
+          <button
+            className="button primary"
+            onClick={() => openForm(emptyMcpDraft())}
+          >
+            <Plus size={16} />
+            自定义添加
+          </button>
+        }
+      />
       {message && (
         <p className="mcp-banner success" role="status">
           {message}
         </p>
       )}
-      {error && !dialog && (
+      {error && !dialog && connectors.length > 0 && (
         <p className="mcp-banner error" role="alert">
           {error}
         </p>
+      )}
+      {loadError && connectors.length > 0 && (
+        <div className="mcp-load-error" role="alert">
+          <span>连接器列表刷新失败：{loadError}</span>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={loading}
+            aria-busy={loading}
+            onClick={() => void refresh()}
+          >
+            {loading ? "正在重试…" : "重试"}
+          </button>
+        </div>
       )}
       {connectors.length ? (
         <div className="mcp-list">
@@ -455,13 +481,45 @@ export function McpPage({
             </article>
           ))}
         </div>
+      ) : loading ? (
+        <div className="empty-state mcp-empty">
+          <div className="empty-icon">
+            <Cable size={28} />
+          </div>
+          <h2>正在读取 MCP 连接器</h2>
+          <p>正在读取连接器，请稍候。</p>
+        </div>
+      ) : loadError ? (
+        <div className="empty-state mcp-empty">
+          <div className="empty-icon">
+            <Cable size={28} />
+          </div>
+          <h2>未能读取 MCP 连接器</h2>
+          <p role="alert">{loadError}</p>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={loading}
+            aria-busy={loading}
+            onClick={() => void refresh()}
+          >
+            {loading ? "正在重试…" : "重试"}
+          </button>
+        </div>
       ) : (
         <div className="empty-state mcp-empty">
           <div className="empty-icon">
             <Cable size={28} />
           </div>
-          <h2>{error ? "未能读取 MCP 连接器" : "正在读取 MCP 连接器"}</h2>
-          <p>正在读取连接器，请稍候。</p>
+          <h2>还没有 MCP 连接器</h2>
+          <p>添加远程工具连接，再预览并应用到 Agent。</p>
+          <button
+            className="button secondary"
+            onClick={() => openForm(emptyMcpDraft())}
+          >
+            <Plus size={16} />
+            添加连接器
+          </button>
         </div>
       )}
 
@@ -482,7 +540,7 @@ export function McpPage({
           onClose={closeDialog}
           busy={busy || testing}
         >
-          <form onSubmit={(e) => void save(e)}>
+          <form id="mcp-connector-form" onSubmit={(e) => void save(e)}>
             {!dialog.builtIn && (
               <>
                 <label className="field">
@@ -598,35 +656,40 @@ export function McpPage({
                 {error}
               </p>
             )}
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="button secondary"
-                disabled={busy || testing}
-                onClick={closeDialog}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="button secondary"
-                aria-busy={activeTest?.kind === "draft"}
-                disabled={busy || testing}
-                onClick={() => void runTest(draft)}
-              >
-                {activeTest?.kind === "draft" ? (
-                  <LoaderCircle size={15} className="spin" />
-                ) : (
-                  <FlaskConical size={15} />
-                )}
-                测试连接
-              </button>
-              <button className="button primary" disabled={busy || testing}>
-                {busy ? "保存中…" : "保存连接器"}
-                <Check size={15} />
-              </button>
-            </div>
           </form>
+          <ModalFooter>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy || testing}
+              onClick={closeDialog}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              aria-busy={activeTest?.kind === "draft"}
+              disabled={busy || testing}
+              onClick={() => void runTest(draft)}
+            >
+              {activeTest?.kind === "draft" ? (
+                <LoaderCircle size={15} className="spin" />
+              ) : (
+                <FlaskConical size={15} />
+              )}
+              测试连接
+            </button>
+            <button
+              type="submit"
+              form="mcp-connector-form"
+              className="button primary"
+              disabled={busy || testing}
+            >
+              {busy ? "保存中…" : "保存连接器"}
+              <Check size={15} />
+            </button>
+          </ModalFooter>
         </Modal>
       )}
 
@@ -743,8 +806,9 @@ export function McpPage({
               {error}
             </p>
           )}
-          <div className="modal-footer">
+          <ModalFooter>
             <button
+              type="button"
               className="button secondary"
               disabled={busy}
               onClick={closeDialog}
@@ -752,6 +816,7 @@ export function McpPage({
               取消
             </button>
             <button
+              type="button"
               className="button primary"
               disabled={
                 busy ||
@@ -762,7 +827,7 @@ export function McpPage({
             >
               {busy ? "读取配置中…" : "预览变更"}
             </button>
-          </div>
+          </ModalFooter>
         </Modal>
       )}
 
@@ -800,8 +865,9 @@ export function McpPage({
               {error}
             </p>
           )}
-          <div className="modal-footer">
+          <ModalFooter>
             <button
+              type="button"
               className="button secondary"
               onClick={closeDialog}
               disabled={busy}
@@ -809,13 +875,14 @@ export function McpPage({
               取消
             </button>
             <button
+              type="button"
               className="button danger"
               onClick={() => void confirmDelete()}
               disabled={busy}
             >
               删除记录
             </button>
-          </div>
+          </ModalFooter>
         </Modal>
       )}
     </section>

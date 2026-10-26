@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { RotateCcw, AlertTriangle } from "lucide-react";
-import { Modal } from "./components";
+import { Modal, ModalFooter } from "./components";
 import type { InitializationOptions } from "./types";
 
 /** 让用户明确选择初始化范围，至少选择一项才能进入确认。 */
@@ -115,7 +115,7 @@ export function InitializationConfirmation({
           {error}
         </p>
       )}
-      <div className="modal-footer">
+      <ModalFooter>
         <button
           type="button"
           className="button secondary"
@@ -132,7 +132,7 @@ export function InitializationConfirmation({
         >
           {busy ? "正在初始化…" : "确认初始化"}
         </button>
-      </div>
+      </ModalFooter>
     </Modal>
   );
 }

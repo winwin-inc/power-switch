@@ -125,7 +125,8 @@ describe("About and sidebar app updates", () => {
       timeout: 3000,
     });
 
-    expect(container.querySelector(".version-update-trigger")).toBeNull();
+    expect(container.querySelector(".version-meta button")).toBeNull();
+    expect(container.querySelector(".version-update-status")).toBeNull();
     expect(container.querySelector(".update-control")).toBeNull();
     expect(screen.queryByText("检查更新")).not.toBeInTheDocument();
   });
@@ -168,10 +169,10 @@ describe("About and sidebar app updates", () => {
         .map((heading) => heading.textContent),
     ).toEqual(["power-switch"]);
     expect(screen.getByRole("button", { name: "关于" })).toHaveClass("active");
-    const navigation = screen.getByRole("navigation", { name: "主导航" });
+    const navigation = screen.getByRole("navigation", { name: "应用与帮助" });
     expect(
       Array.from(navigation.querySelectorAll("button"))
-        .slice(-2)
+        .slice(0, 2)
         .map((button) => button.textContent),
     ).toEqual(["设置", "关于"]);
   });
@@ -234,7 +235,7 @@ describe("About and sidebar app updates", () => {
     });
     let resolveCheck!: (value: { version: string; notes: null }) => void;
     let finishInstall!: () => void;
-    let progress!: (percentage: number) => void;
+    let progress!: (percentage: number | null) => void;
     checkForUpdate.mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -247,10 +248,16 @@ describe("About and sidebar app updates", () => {
         finishInstall = resolve;
       });
     });
-    render(<App />);
+    const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "关于" }));
     fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
     expect(screen.getByRole("button", { name: "正在检查" })).toBeDisabled();
+    const footer = within(
+      container.querySelector(".sidebar-status") as HTMLElement,
+    );
+    expect(
+      footer.getByRole("status", { name: "正在检查更新" }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
     fireEvent.click(screen.getByRole("button", { name: "关于" }));
     expect(screen.getByRole("button", { name: "正在检查" })).toBeDisabled();
@@ -261,11 +268,15 @@ describe("About and sidebar app updates", () => {
     );
     expect(installPendingUpdate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "确认更新" }));
+    act(() => progress(null));
+    expect(
+      footer.getByRole("status", { name: "正在下载更新" }),
+    ).toBeInTheDocument();
     act(() => progress(42));
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
     fireEvent.click(screen.getByRole("button", { name: "关于" }));
     expect(
-      screen.getByRole("status", { name: "正在下载更新 42%" }),
+      footer.getByRole("status", { name: "正在下载更新 42%" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "检查更新" })).toBeDisabled();
     expect(
@@ -277,7 +288,7 @@ describe("About and sidebar app updates", () => {
     );
     await act(async () => finishInstall());
     expect(
-      screen.getByRole("button", { name: "更新完成，重启应用" }),
+      footer.getByRole("button", { name: "更新完成，重启应用" }),
     ).toBeInTheDocument();
   });
 
@@ -294,20 +305,83 @@ describe("About and sidebar app updates", () => {
     expect(message.parentElement).toHaveClass("app-shell");
   });
 
-  it("keeps failed update checks visible in About and allows a retry", async () => {
+  it("keeps failed checks and retries in About without a sidebar update action", async () => {
     apiData.mockResolvedValue({
       ...structuredClone(sampleData),
       settings: { ...sampleData.settings, autoUpdate: false },
     });
     checkForUpdate.mockRejectedValueOnce(new Error("更新服务暂不可用"));
-    render(<App />);
+    const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "关于" }));
     fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
     expect(screen.getByText("Error: 更新服务暂不可用")).toBeInTheDocument();
+    expect(container.querySelector(".version-meta button")).toBeNull();
+    expect(container.querySelector(".version-update-status")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
     await screen.findByRole("button", { name: "发现 v0.1.7，查看更新" });
     expect(checkForUpdate).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps an automatic check failure quiet in the sidebar and clears it after a latest-version retry", async () => {
+    checkForUpdate
+      .mockRejectedValueOnce(new Error("无法解析 GitHub 发布列表"))
+      .mockResolvedValueOnce(null);
+    const { container } = render(<App />);
+    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledOnce(), {
+      timeout: 3000,
+    });
+    await waitFor(() =>
+      expect(container.querySelector(".version-update-status")).toBeNull(),
+    );
+    expect(container.querySelector(".version-meta button")).toBeNull();
+    expect(screen.queryByText("Error: 无法解析 GitHub 发布列表")).toBeNull();
+    expect(screen.queryByText("当前更新通道已是最新版本。")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "关于" }));
+    expect(
+      screen.getByText("Error: 无法解析 GitHub 发布列表"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    await screen.findByText("当前更新通道已是最新版本。");
+    expect(screen.queryByText("Error: 无法解析 GitHub 发布列表")).toBeNull();
+    expect(container.querySelector(".version-meta button")).toBeNull();
+    expect(container.querySelector(".version-update-status")).toBeNull();
+    expect(installPendingUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each(["install", "restart"])(
+    "reports a confirmed %s failure without using a sidebar error button",
+    async (stage) => {
+      apiData.mockResolvedValue({
+        ...structuredClone(sampleData),
+        settings: { ...sampleData.settings, autoUpdate: false },
+      });
+      const failure = new Error("更新操作失败");
+      if (stage === "install")
+        installPendingUpdate.mockRejectedValueOnce(failure);
+      else restartUpdatedApp.mockRejectedValueOnce(failure);
+      const { container } = render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: "关于" }));
+      fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "发现 v0.1.7，查看更新" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "确认更新" }));
+      if (stage === "restart")
+        fireEvent.click(
+          await screen.findByRole("button", { name: "更新完成，重启应用" }),
+        );
+      await waitFor(() =>
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "Error: 更新操作失败",
+        ),
+      );
+      expect(container.querySelector(".version-meta button")).toBeNull();
+      expect(screen.getByRole("button", { name: "检查更新" })).toBeEnabled();
+      fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+      await waitFor(() => expect(checkForUpdate).toHaveBeenCalledTimes(2));
+    },
+  );
 });

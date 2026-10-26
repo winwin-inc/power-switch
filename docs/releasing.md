@@ -145,11 +145,13 @@ just package-download RUN_ID
 
 | 系统                        | 原生运行器       | 发布文件                         |
 | --------------------------- | ---------------- | -------------------------------- |
-| macOS Intel + Apple Silicon | macos-15         | `.dmg`、`.zip`、更新器 `.tar.gz` |
+| macOS Intel + Apple Silicon | macos-15-intel   | `.dmg`、`.zip`、更新器 `.tar.gz` |
 | Windows x64                 | windows-2022     | `.msi`、`.zip`                   |
 | Windows ARM64               | windows-11-arm   | `.msi`、`.zip`                   |
 | Linux x64                   | ubuntu-22.04     | `.AppImage`、`.deb`、`.rpm`      |
 | Linux ARM64                 | ubuntu-22.04-arm | `.AppImage`、`.deb`、`.rpm`      |
+
+macOS 检查及打包固定使用标准 Intel 执行器，避免 `macos-15` 默认标签的架构迁移影响构建环境；通用包仍包含 Intel 和 Apple Silicon 两种架构。
 
 命名为 `power-switch-TAG-<平台>.<扩展名>`。完整 Release 包含 12 个常规安装包、macOS 更新归档、`SHA256SUMS` 和 `latest.json`，合计 15 个资产。五个平台全部构建成功后，才通过草稿上传、核对服务端 SHA-256 并公开为预发布。版本说明优先读取标签内的 `docs/releases/TAG.md`；旧版本回退到历史发布模板。
 

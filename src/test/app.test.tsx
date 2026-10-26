@@ -97,6 +97,22 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Agent icons", () => {
+  it("keeps the compact sidebar identity and brand navigation accessible", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("heading", { name: "模型库" });
+    const footer = container.querySelector(".sidebar-status") as HTMLElement;
+    expect(footer).toHaveTextContent("本机存储");
+    expect(footer).not.toHaveTextContent("应用配置前自动备份");
+    expect(footer).not.toHaveTextContent("power-switch");
+    await userEvent.click(screen.getByRole("button", { name: "设置" }));
+    await userEvent.click(
+      screen.getByRole("link", { name: "power-switch，返回模型库" }),
+    );
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "模型库",
+    );
+  });
+
   it("shows the Codex icon for OpenAI Responses models", () => {
     const { container } = render(
       <ProtocolMark protocol="openai-responses" name="专注代码" />,
@@ -139,7 +155,7 @@ describe("model editing", () => {
       actions.indexOf("从 New API 添加"),
     );
     const guideButton = screen.getByRole("button", { name: "新手指引" });
-    expect(guideButton.closest(".topbar")).not.toBeNull();
+    expect(guideButton.closest(".sidebar-utilities")).not.toBeNull();
     await userEvent.click(guideButton);
     expect(
       screen.getByRole("heading", { name: "申请 WorkBuddy 密钥" }),
@@ -177,20 +193,50 @@ describe("model editing", () => {
       screen.getByRole("checkbox", { name: "图像输入" }),
     ).not.toBeChecked();
   });
-  it("defaults new model context to one million tokens and preserves saved values", async () => {
-    const props = { onSave: vi.fn(), onCancel: vi.fn(), busy: false };
-    const { rerender } = render(<ModelForm initial={newModel()} {...props} />);
-    await userEvent.click(screen.getByText("高级设置"));
-    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(1_000_000);
-    rerender(
+  it.each(["openai-chat", "openai-responses", "anthropic-messages"] as const)(
+    "defaults %s to 524288 and high while preserving saved values",
+    async (protocol) => {
+      const props = { onSave: vi.fn(), onCancel: vi.fn(), busy: false };
+      const { rerender } = render(
+        <ModelForm initial={{ ...newModel(), protocol }} {...props} />,
+      );
+      const hint = screen.getByText(/如果你不了解这些参数/);
+      expect(hint).toBeVisible();
+      expect(hint.closest("details")).toBeNull();
+      if (protocol !== "openai-responses")
+        await userEvent.click(screen.getByText("高级设置"));
+      expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(524_288);
+      expect(screen.getByRole("radio", { name: "高" })).toBeChecked();
+      rerender(
+        <ModelForm
+          key="saved-context"
+          initial={{ ...sample, contextWindow: 128_000 }}
+          {...props}
+        />,
+      );
+      await userEvent.click(screen.getByText("高级设置"));
+      expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(128_000);
+    },
+  );
+
+  it("preserves custom capabilities in copied model drafts", async () => {
+    render(
       <ModelForm
-        key="saved-context"
-        initial={{ ...sample, contextWindow: 128_000 }}
-        {...props}
+        initial={{
+          ...sample,
+          id: "",
+          contextWindow: 262_144,
+          reasoningLevels: ["low"],
+        }}
+        copy
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+        busy={false}
       />,
     );
     await userEvent.click(screen.getByText("高级设置"));
-    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(128_000);
+    expect(screen.getByLabelText(/上下文窗口/)).toHaveValue(262_144);
+    expect(screen.getByRole("radio", { name: "低" })).toBeChecked();
   });
   it("shows five Chinese reasoning levels and defaults new models to high", async () => {
     render(
@@ -277,7 +323,7 @@ describe("model editing", () => {
     );
   });
 
-  it("uses the Codex context default on protocol changes until manually edited", async () => {
+  it("keeps the shared context default across protocols until manually edited", async () => {
     render(
       <ModelForm
         initial={newModel()}
@@ -291,7 +337,7 @@ describe("model editing", () => {
     const context = screen.getByLabelText(/上下文窗口/);
     expect(context).toHaveValue(524_288);
     await userEvent.selectOptions(protocol, "anthropic-messages");
-    expect(context).toHaveValue(1_000_000);
+    expect(context).toHaveValue(524_288);
     fireEvent.change(context, { target: { value: "262144" } });
     await userEvent.selectOptions(protocol, "openai-responses");
     expect(context).toHaveValue(262_144);
@@ -526,6 +572,9 @@ describe("model test gating and indicators", () => {
     expect(
       await screen.findByRole("img", { name: "模型测试通过" }),
     ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "更多操作 我的模型" }),
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "复制 我的模型" }),
     );
@@ -782,6 +831,9 @@ describe("settings and backup controls", () => {
     vi.mocked(api.delete).mockResolvedValue();
     render(<App />);
     await screen.findByText("我的模型");
+    await userEvent.click(
+      screen.getByRole("button", { name: "更多操作 我的模型" }),
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "删除 我的模型" }),
     );
@@ -1240,6 +1292,9 @@ describe("library and imports", () => {
     render(<App />);
     await screen.findByText("我的模型");
     await userEvent.click(
+      screen.getByRole("button", { name: "更多操作 我的模型" }),
+    );
+    await userEvent.click(
       screen.getByRole("button", { name: "分享 我的模型" }),
     );
     await waitFor(() => expect(api.share).toHaveBeenCalledWith("1", false));
@@ -1408,5 +1463,73 @@ describe("provider model selector", () => {
       apiKey: "secret-test-key-new",
     });
     expect(screen.getByRole("combobox", { name: "模型 ID" })).toHaveValue("");
+  });
+});
+
+describe("simplified library navigation", () => {
+  it("clears both the search and Agent filter from the no-results state", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("我的模型");
+    await user.type(
+      screen.getByRole("textbox", { name: "搜索模型" }),
+      "absent",
+    );
+    await user.click(screen.getByRole("button", { name: "Codex" }));
+    expect(
+      screen.getByRole("heading", { name: "没有找到匹配的模型" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(screen.getByRole("textbox", { name: "搜索模型" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: /全部模型/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("我的模型")).toBeInTheDocument();
+  });
+
+  it("shows a durable load error and retries without confusing it with an empty library", async () => {
+    let completeRetry!: (value: AppData) => void;
+    vi.mocked(api.data)
+      .mockRejectedValueOnce(new Error("读取失败"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeRetry = resolve;
+          }),
+      );
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("读取失败");
+    expect(screen.queryByText("从你的第一个模型开始")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(screen.getByRole("status")).toHaveTextContent("正在打开模型库");
+    expect(
+      screen.queryByRole("button", { name: "重新加载" }),
+    ).not.toBeInTheDocument();
+    await act(async () => completeRetry(structuredClone(data)));
+    expect(screen.getByText("我的模型")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(api.data).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps destructive actions in More and returns focus after canceling confirmation", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("我的模型");
+    const trigger = screen.getByRole("button", { name: "更多操作 我的模型" });
+    expect(
+      screen.queryByRole("button", { name: "删除 我的模型" }),
+    ).not.toBeInTheDocument();
+    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "删除 我的模型" }));
+    expect(
+      screen.getByRole("dialog", { name: "删除模型" }),
+    ).toBeInTheDocument();
+    expect(api.delete).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(api.delete).not.toHaveBeenCalled();
   });
 });
